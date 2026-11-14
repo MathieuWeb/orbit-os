@@ -1,0 +1,17 @@
+{
+  "note": "Abliterated (uncensored) coding models on Ollama. Tags and sizes checked against ollama.com and registry.ollama.ai on 2026-11-14. Coding scores are a rough personal ranking (1-10), not a benchmark.",
+  "models": [
+    { "name": "Qwen3.5 9B OmniCoder abliterated", "tag": "huihui_ai/qwen3.5-abliterated:9b-OmniCoder", "params": "9B", "quant": "Q4_K", "sizeGB": 6.4, "score": 7 },
+    { "name": "Qwen3.5 9B abliterated", "tag": "huihui_ai/qwen3.5-abliterated:9b", "params": "9B", "quant": "Q4_K", "sizeGB": 6.6, "score": 6 },
+    { "name": "Qwen3.5 9B Claude-distill abliterated", "tag": "huihui_ai/qwen3.5-abliterated:9b-Claude", "params": "9B", "quant": "Q4_K", "sizeGB": 6.6, "score": 6 },
+    { "name": "Qwen3 8B abliterated", "tag": "huihui_ai/qwen3-abliterated:8b", "params": "8.2B", "quant": "Q4_K_M", "sizeGB": 5.0, "score": 5 },
+    { "name": "Qwen2.5 Coder 7B abliterated", "tag": "huihui_ai/qwen2.5-coder-abliterate:7b", "params": "7B", "quant": "Q4_K_M", "sizeGB": 4.7, "score": 5 },
+    { "name": "Qwen3.5 4B abliterated", "tag": "huihui_ai/qwen3.5-abliterated:4B", "params": "4B", "quant": "Q4_K", "sizeGB": 3.3, "score": 4 },
+    { "name": "Qwen2.5 Coder 14B abliterated", "tag": "huihui_ai/qwen2.5-coder-abliterate:14b", "params": "14B", "quant": "Q4_K_M", "sizeGB": 9.0, "score": 6 },
+    { "name": "Qwen3 14B abliterated", "tag": "huihui_ai/qwen3-abliterated:14b", "params": "14.8B", "quant": "Q4_K_M", "sizeGB": 9.0, "score": 6 },
+    { "name": "Qwen3.5 27B abliterated", "tag": "huihui_ai/qwen3.5-abliterated:27b", "params": "27B", "quant": "Q4_K", "sizeGB": 17, "score": 8 },
+    { "name": "Qwen3 Coder 30B-A3B abliterated", "tag": "huihui_ai/qwen3-coder-abliterated:30b", "params": "30B (3B active)", "quant": "Q4_K_M", "sizeGB": 19, "score": 8 },
+    { "name": "Qwen2.5 Coder 32B abliterated", "tag": "huihui_ai/qwen2.5-coder-abliterate:32b", "params": "32B", "quant": "Q4_K_M", "sizeGB": 20, "score": 7 },
+    { "name": "Qwen3.5 35B-A3B abliterated", "tag": "huihui_ai/qwen3.5-abliterated:35b-a3b", "params": "35B (3B active)", "quant": "Q4_K", "sizeGB": 24, "score": 8 }
+  ]
+}

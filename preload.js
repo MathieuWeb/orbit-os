@@ -1,0 +1,26 @@
+const { contextBridge, ipcRenderer } = require('electron');
+
+const on = (ch) => (fn) => ipcRenderer.on(ch, (_e, ...a) => fn(...a));
+
+contextBridge.exposeInMainWorld('api', {
+  spawn: (opts) => ipcRenderer.invoke('pty:spawn', opts),
+  write: (id, d) => ipcRenderer.send('pty:write', id, d),
+  resize: (id, c, r) => ipcRenderer.send('pty:resize', id, c, r),
+  kill: (id) => ipcRenderer.send('pty:kill', id),
+  onData: on('pty:data'),
+  onExit: on('pty:exit'),
+  getState: () => ipcRenderer.invoke('state:get'),
+  setState: (k, v) => ipcRenderer.invoke('state:set', k, v),
+  listProjects: () => ipcRenderer.invoke('projects:list'),
+  createRoot: () => ipcRenderer.invoke('projects:create'),
+  chooseRoot: () => ipcRenderer.invoke('projects:chooseRoot'),
+  onProjects: on('projects:changed'),
+  tools: () => ipcRenderer.invoke('tools:status'),
+  system: () => ipcRenderer.invoke('system:stats'),
+  usageLogs: () => ipcRenderer.invoke('usage:logs'),
+  capture: (tool) => ipcRenderer.invoke('usage:capture', tool),
+  finder: () => ipcRenderer.invoke('finder:run'),
+  refreshCatalog: () => ipcRenderer.invoke('finder:refresh'),
+  onDefaultModel: on('model:default'),
+  openUrl: (u) => ipcRenderer.invoke('open:url', u),
+});
