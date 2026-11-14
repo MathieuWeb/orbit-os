@@ -15,4 +15,6 @@ osascript -e 'tell application "AI Terminal" to quit' 2>/dev/null || true
 sleep 1
 rm -rf "/Applications/$APP" "/Applications/AI Terminal.app"
 ditto "dist/mac-arm64/$APP" "/Applications/$APP"
+# Remove the build copy so Spotlight and Launchpad list the app only once.
+rm -rf dist/mac-arm64
 echo "✔ Installed in /Applications/$APP"
