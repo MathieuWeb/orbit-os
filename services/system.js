@@ -3,7 +3,7 @@ const os = require('os');
 const { execFile } = require('child_process');
 const http = require('http');
 
-const run = (cmd, args) => new Promise((res) => execFile(cmd, args, { timeout: 8000 }, (e, out) => res(e ? null : out)));
+const run = (cmd, args) => new Promise((res) => execFile(cmd, args, { timeout: 8000, maxBuffer: 8 << 20 }, (e, out) => res(e ? null : out)));
 
 // Matches Activity Monitor's "Memory Used": app memory + wired + compressed.
 async function memory() {
@@ -30,9 +30,9 @@ function cpu() {
   return total ? Math.round((1 - idle / total) * 100) : 0;
 }
 
-// `command -v` inside a login shell, so PATH matches the user's Terminal.
+// Interactive login shell: PATH set in ~/.zshrc (nvm, ~/.local/bin) is invisible to a plain -l shell when launched from Finder.
 async function which(bin) {
-  const out = await run(process.env.SHELL || '/bin/zsh', ['-l', '-c', `command -v ${bin}`]);
+  const out = await run(process.env.SHELL || '/bin/zsh', ['-l', '-i', '-c', `command -v ${bin}`]);
   return out ? out.trim().split('\n').pop() : null;
 }
 
@@ -56,4 +56,33 @@ async function ollama() {
   };
 }
 
-module.exports = { memory, cpu, which, ollama };
+// Apps the user opened (bundles in an Applications folder), with their helpers' memory summed.
+// RSS counts shared pages in each process, so totals are an estimate (shown with ≈).
+const APP_RE = new RegExp(`^(?:/System)?(?:/Applications|${os.homedir().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/Applications)/(?:[^/]+/)*?([^/]+)\\.app/`);
+const own = (process.execPath.match(/([^/]+)\.app\//) || [])[1];
+async function apps() {
+  const out = await run('/bin/ps', ['-axo', 'rss=,comm=']);
+  const by = {};
+  for (const line of (out || '').split('\n')) {
+    const m = line.trim().match(/^(\d+)\s+(.+)$/);
+    const a = m && m[2].match(APP_RE);
+    if (!a || a[1] === own || a[1] === 'Finder') continue;
+    by[a[1]] = (by[a[1]] || 0) + Number(m[1]) * 1024;
+  }
+  return Object.entries(by).map(([name, bytes]) => ({ name, mb: Math.round(bytes / 1048576) }))
+    .filter((a) => a.mb >= 50).sort((a, b) => b.mb - a.mb);
+}
+
+// Polite quit (same as Cmd+Q): apps with unsaved work ask before closing. Never force-killed.
+const quitApp = (name) => run('/usr/bin/osascript', ['-e', 'on run argv', '-e', 'tell application (item 1 of argv) to quit', '-e', 'end run', name]).then((o) => o !== null);
+
+// keep_alive 0 makes Ollama drop the model from memory now.
+function unloadModel(model) {
+  return new Promise((resolve) => {
+    const req = http.request({ host: '127.0.0.1', port: 11434, path: '/api/generate', method: 'POST', timeout: 5000, headers: { 'Content-Type': 'application/json' } }, (res) => { res.resume(); res.on('end', () => resolve(true)); });
+    req.on('error', () => resolve(false)).on('timeout', () => { req.destroy(); resolve(false); });
+    req.end(JSON.stringify({ model, keep_alive: 0 }));
+  });
+}
+
+module.exports = { memory, cpu, which, ollama, apps, quitApp, unloadModel, APP_RE };

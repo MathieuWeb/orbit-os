@@ -10,15 +10,17 @@ const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const ICONS = {
   claude: '<svg viewBox="0 0 24 24"><path d="M12 3l2.2 6.8L21 12l-6.8 2.2L12 21l-2.2-6.8L3 12l6.8-2.2z"/></svg>',
   codex: '<svg viewBox="0 0 24 24"><path d="M12 2.5l8.2 4.75v9.5L12 21.5l-8.2-4.75v-9.5z"/><path d="M10 9.5L7.5 12l2.5 2.5M14 9.5l2.5 2.5-2.5 2.5"/></svg>',
+  gemini: '<svg viewBox="0 0 24 24"><path d="M12 3c0 5 4 9 9 9-5 0-9 4-9 9 0-5-4-9-9-9 5 0 9-4 9-9z"/></svg>',
   ollama: '<svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2.5v3M15 2.5v3M9 18.5v3M15 18.5v3M2.5 9h3M2.5 15h3M18.5 9h3M18.5 15h3"/><circle cx="12" cy="12" r="2"/></svg>',
   shell: '<svg viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="15" rx="2"/><path d="M7 10l3 2.5L7 15M12.5 15H17"/></svg>',
   home: '<svg viewBox="0 0 24 24"><path d="M4 11l8-6.5 8 6.5M6 9.5V19h12V9.5"/></svg>',
   pulse: '<svg viewBox="0 0 24 24"><path d="M3 12h4l2.5-6 5 12 2.5-6h4"/></svg>',
 };
-const DESC = { claude: 'Anthropic coding agent', codex: 'OpenAI coding agent', ollama: 'Free model on your Mac', shell: 'Your normal zsh' };
+const DESC = { claude: 'Anthropic coding agent', codex: 'OpenAI coding agent', gemini: 'Google agent (Gemini)', ollama: 'Free model on your Mac', shell: 'Your normal zsh' };
 const INSTALL = {
   claude: { title: 'Claude Code is not installed', steps: ['curl -fsSL https://claude.ai/install.sh | bash'], after: 'Then open a Claude Code tab and follow the login steps.', url: 'https://docs.claude.com/en/docs/claude-code/setup' },
   codex: { title: 'Codex is not installed', steps: ['npm install -g @openai/codex'], after: 'Then open a Codex tab and sign in with your ChatGPT account.', url: 'https://github.com/openai/codex' },
+  gemini: { title: 'Antigravity CLI is not installed', steps: ['curl -fsSL https://antigravity.google/cli/install.sh | bash'], after: 'Then open an Antigravity tab: it opens your browser to sign in with your Google account.', url: 'https://antigravity.google' },
   ollama: { title: 'Ollama is not installed', steps: [], after: 'Download the Ollama app, drag it to Applications and open it once. It runs quietly in the menu bar.', url: 'https://ollama.com/download' },
 };
 
@@ -27,7 +29,7 @@ const S = {
   tabs: [], active: 'home', pair: null,
   projects: { exists: true, projects: [], dir: '' },
   tools: { installed: {}, ollama: { running: false, models: [], loaded: [] } },
-  logs: null, usage: { claude: null, codex: null }, loading: {}, activityTool: 'claude', search: '',
+  logs: null, usage: { claude: null, codex: null, gemini: null }, live: { claude: null, codex: null, gemini: null }, loading: {}, activityTool: 'claude', search: '',
 };
 let uid = 0;
 const byPty = new Map();
@@ -35,7 +37,7 @@ const byPty = new Map();
 /* ---------- terminal theme ---------- */
 function termTheme(a = S.settings.accent) {
   return {
-    background: '#070a12', foreground: '#d6deeb', cursor: a, cursorAccent: '#05070d',
+    background: '#09090b', foreground: '#e4e2e8', cursor: a, cursorAccent: '#060607',
     selectionBackground: a + '44', selectionForeground: '#ffffff',
     black: '#0b0f19', red: '#ff5c7a', green: '#3ee6a0', yellow: '#ffd166', blue: '#5aa9ff', magenta: '#b18cff', cyan: '#22d3ee', white: '#c8d3e6',
     brightBlack: '#56627a', brightRed: '#ff8098', brightGreen: '#6ff2bb', brightYellow: '#ffe08f', brightBlue: '#86c1ff', brightMagenta: '#caa9ff', brightCyan: '#67e8f9', brightWhite: '#f5f8ff',
@@ -105,11 +107,19 @@ function closeTab(id, silent) {
   layout(); renderTabs(); renderProjects(); renderModels();
 }
 
-function activate(id) { S.active = id; layout(); renderTabs(); }
+function activate(id) { S.active = id; if (id !== 'home') setView('term'); else layout(); renderTabs(); }
+
+function setView(v) {
+  document.body.dataset.view = v;
+  $('#crumb').textContent = v === 'dash' ? 'Dashboard' : (S.tabs.find((t) => t.uid === S.active) ? tabLabel(S.tabs.find((t) => t.uid === S.active)) : 'Terminals');
+  document.querySelectorAll('.nav-item[data-view]').forEach((b) => b.classList.toggle('on', b.dataset.view === v));
+  layout();
+}
+document.querySelectorAll('.nav-item[data-view]').forEach((b) => (b.onclick = () => setView(b.dataset.view)));
 
 function layout() {
   const show = S.pair && S.pair.includes(S.active) ? S.pair : [S.active];
-  $('#home').style.display = S.active === 'home' ? '' : 'none';
+  $('#emptyStage').style.display = S.tabs.some((t) => show.includes(t.uid)) ? 'none' : '';
   for (const t of S.tabs) {
     const v = show.includes(t.uid);
     t.el.classList.toggle('visible', v);
@@ -120,15 +130,16 @@ function layout() {
   requestAnimationFrame(() => {
     for (const t of S.tabs) if (show.includes(t.uid)) { try { t.fit.fit(); } catch {} }
     const cur = S.tabs.find((t) => t.uid === S.active);
-    if (cur && $('#modal').hidden) cur.term.focus();
+    if (cur && $('#modal').hidden && document.body.dataset.view === 'term') cur.term.focus();
   });
 }
 
 function tabLabel(t) { return t.pull ? 'Install ' + t.pull.split(':').pop() : (t.project || base(t.cwd)); }
 
 function renderTabs() {
-  const homeBtn = `<button class="tab ${S.active === 'home' ? 'active' : ''}" data-id="home" role="tab" title="Home">${ICONS.home}</button>`;
-  $('#tabs').innerHTML = homeBtn + S.tabs.map((t, i) => `
+  $('#tabCount').textContent = S.tabs.length || '';
+  if (document.body.dataset.view === 'term') $('#crumb').textContent = S.tabs.find((t) => t.uid === S.active) ? tabLabel(S.tabs.find((t) => t.uid === S.active)) : 'Terminals';
+  $('#tabs').innerHTML = S.tabs.map((t, i) => `
     <div class="tab ${t.uid === S.active ? 'active' : ''} ${S.pair?.includes(t.uid) ? 'split' : ''} ${t.exited ? 'exited' : ''}" data-id="${t.uid}" role="tab" title="${esc(S.presets[t.preset].label)} · ${esc(t.cwd || '')}${i < 9 ? ' (Cmd+' + (i + 1) + ')' : ''}">
       ${ICONS[t.preset]}<span class="label">${esc(tabLabel(t))}</span><button class="x" data-close="${t.uid}" aria-label="Close tab">×</button>
     </div>`).join('');
@@ -184,7 +195,10 @@ function toggleSplit() {
   openLauncher(currentProject() || { name: cur.project || base(cur.cwd), path: cur.cwd }, true);
 }
 $('#splitBtn').onclick = toggleSplit;
-$('#newBtn').onclick = () => openLauncher(currentProject());
+$('#newBtn').onclick = $('#navNew').onclick = () => openLauncher(currentProject());
+$('#navFinder').onclick = () => openFinder();
+$('#navFree').onclick = () => openFreeRam();
+$('#projToggle').onclick = () => { $('#projPanel').classList.toggle('collapsed'); layout(); };
 
 /* ---------- projects sidebar ---------- */
 function renderProjects() {
@@ -226,7 +240,7 @@ api.onProjects((l) => { S.projects = l; renderProjects(); renderHome(); });
 function openLauncher(project, beside = false) {
   const last = project && S.lastAi[project.name];
   const cwd = project ? project.path : S.projects.exists ? S.projects.dir : null;
-  const order = ['claude', 'codex', 'ollama', 'shell'];
+  const order = ['claude', 'codex', 'gemini', 'ollama', 'shell'];
   const sub = (k) => {
     if (!installed(k)) return 'Not installed: click for steps';
     if (k === 'ollama') return S.settings.defaultModel ? esc(S.settings.defaultModel) + (S.tools.ollama.running ? '' : ' · open the Ollama app first') : 'No model yet: find one';
@@ -291,7 +305,7 @@ function toolState(k) {
 }
 function renderModels() {
   const label = { missing: 'Not installed', installed: 'Installed', running: 'Running' };
-  $('#modelCards').innerHTML = ['claude', 'codex', 'ollama'].map((k) => {
+  $('#modelCards').innerHTML = ['claude', 'codex', 'gemini', 'ollama'].map((k) => {
     const st = toolState(k);
     let s = label[st];
     if (k === 'ollama' && st !== 'missing') s += S.tools.ollama.running ? ` · ${S.tools.ollama.models.length} model${S.tools.ollama.models.length === 1 ? '' : 's'}` : ' · app not open';
@@ -304,7 +318,6 @@ function renderModels() {
     : o.models.length ? o.models.map((m) => `<li data-model="${esc(m.name)}" class="${m.name === S.settings.defaultModel ? 'default' : ''}" title="Click to make this the default local model"><span>${esc(m.name)}</span><span>${m.sizeGB} GB</span></li>`).join('')
     : '<li class="na">No models yet: use Find best local model</li>';
 }
-$('#modelCards').addEventListener('click', (e) => { const b = e.target.closest('[data-install]'); if (b) showInstall(b.dataset.install); });
 $('#ollamaList').addEventListener('click', (e) => {
   const li = e.target.closest('[data-model]');
   if (!li) return;
@@ -317,32 +330,65 @@ $('#toolsRefresh').onclick = () => refreshTools(true);
 
 async function refreshTools(announce) {
   S.tools = await api.tools();
-  renderModels(); renderLocal(); renderUsage('claude'); renderUsage('codex');
+  renderModels(); renderLocal(); Object.keys(USAGE).forEach(renderUsage);
   if (announce) toast('Tools checked');
 }
 
 /* ---------- usage cards ---------- */
-function renderUsage(tool) {
-  const el = $(tool === 'claude' ? '#usageClaude' : '#usageCodex');
-  const name = tool === 'claude' ? 'Claude Code' : 'Codex';
-  const cmd = tool === 'claude' ? '/usage' : '/status';
-  const u = S.usage[tool], loading = S.loading[tool];
-  let body;
-  if (!S.tools.installed[tool]) body = `<p class="na">Not installed. <button class="link-btn" data-install="${tool}">How to install</button></p>`;
-  else if (loading) body = `<p class="muted small">Opening ${name} in the background and reading <code>${cmd}</code>… (about 10 seconds)</p>`;
-  else if (!u) body = `<p class="muted small">Press Refresh to read your plan usage from <code>${cmd}</code>.</p>`;
-  else {
-    const meters = (u.items || []).map((m) => `<div class="meter"><div class="meter-top"><span>${esc(m.label)}</span><b>${m.percentUsed}%</b></div>
-      <div class="bar ${m.percentUsed >= 80 ? 'hot' : ''}"><i data-w="${m.percentUsed}"></i></div>${m.resets ? `<div class="reset">Resets ${esc(m.resets)}</div>` : ''}</div>`).join('');
-    body = (u.error ? `<p class="na">${esc(u.error === 'not installed' ? 'Not available' : u.error)}</p>` : '')
-      + (meters || (u.ok ? '<p class="na">Plan limits: not available (could not read them from the output).</p>' : ''))
-      + `<div class="reset">Last refreshed ${timeStr(u.at)}</div>`
-      + (u.text ? `<details><summary>Raw output</summary><pre class="raw">${esc(u.text)}</pre></details>` : '');
-  }
-  el.innerHTML = `<div class="card-head">${ICONS[tool]}<h2>${name} usage</h2>${S.tools.installed[tool] ? `<button class="btn" data-refresh="${tool}" ${loading ? 'disabled' : ''}>${loading ? 'Reading…' : 'Refresh'}</button>` : ''}</div>${body}`;
-  requestAnimationFrame(() => el.querySelectorAll('.bar i[data-w]').forEach((i) => (i.style.width = i.dataset.w + '%')));
+const USAGE = {
+  claude: { el: '#usageClaude', name: 'Claude Code', cmd: '/usage' },
+  codex: { el: '#usageCodex', name: 'Codex', cmd: '/status' },
+  gemini: { el: '#usageGemini', name: 'Antigravity', cmd: '/usage' },
+};
+// Newest of live (API) and captured data for a tool.
+function usageOf(tool) { const c = S.usage[tool], l = S.live[tool]; return l && (!c || l.at >= c.at) ? l : c; }
+// The 5 h session limit (headline) and the all-models weekly limit (shown under it).
+function pickLimits(items) {
+  const week = items.find((m) => /week/i.test(m.label) && !/opus|sonnet|fable/i.test(m.label));
+  const session = items.find((m) => m !== week && /session|5 ?h|hour/i.test(m.label)) || items.find((m) => m !== week);
+  return { session, week };
 }
-$('#panel').addEventListener('click', async (e) => {
+function renderUsage(tool) {
+  const { el: sel, name, cmd } = USAGE[tool], el = $(sel);
+  const u = usageOf(tool), loading = S.loading[tool];
+  const items = (u && u.items) || [];
+  const { session, week } = pickLimits(items);
+  const main = session || week;
+  let status;
+  if (!S.tools.installed[tool]) status = `Not installed. <button class="link-btn" data-install="${tool}">How to install</button>`;
+  else if (loading) status = `Reading <code>${cmd}</code> in the background… (about 10 s)`;
+  else if (!u) status = `Press Refresh to read <code>${cmd}</code>.`;
+  else if (u.error) status = esc(u.error === 'not installed' ? 'Not available' : u.error);
+  else status = u.live ? `<span class="live-dot"></span>Live · ${timeStr(u.at)}` : `Refreshed ${timeStr(u.at)}`;
+  const under = main !== week ? week : null;
+  const meters = items.filter((m) => m !== main && m !== under).map((m) => `<div class="meter"><div class="meter-top"><span>${esc(m.label)}</span><b>${m.percentUsed}%</b></div>
+    <div class="bar ${m.percentUsed >= 80 ? 'hot' : ''}"><i data-w="${m.percentUsed}"></i></div>${m.resets ? `<div class="reset">Resets ${esc(m.resets)}</div>` : ''}</div>`).join('');
+  const pct = main ? main.percentUsed : null;
+  el.innerHTML = `<div class="orb ${tool} ${pct >= 80 ? 'hot' : ''}"><i style="height:${pct == null ? 0 : Math.max(6, pct)}%"></i><span class="orb-ico">${ICONS[tool]}</span></div>
+    <div class="orb-meta">
+      <div class="big">${pct == null ? '–' : pct}<small>%</small></div>
+      <div class="lbl"><span class="dotc"></span>${name}, ${main && main === week ? 'weekly' : '5 h limit'}</div>
+      ${main && main.resets ? `<div class="reset">Resets ${esc(main.resets)}</div>` : ''}
+      ${under ? `<div class="week"><div class="meter-top"><span>Weekly</span><b>${under.percentUsed}%</b></div><div class="bar ${under.percentUsed >= 80 ? 'hot' : ''}"><i data-w="${under.percentUsed}"></i></div>${under.resets ? `<div class="reset">Resets ${esc(under.resets)}</div>` : ''}</div>` : ''}
+      <div class="reset">${status}</div>
+      ${S.tools.installed[tool] ? `<div class="orb-actions"><button class="chip" data-refresh="${tool}" ${loading ? 'disabled' : ''}>${loading ? 'Reading…' : 'Refresh'}</button>
+        ${meters || (u && u.text) ? `<details><summary>Details</summary>${meters}${u && u.text ? `<pre class="raw">${esc(u.text)}</pre>` : ''}</details>` : ''}</div>` : ''}
+    </div>`;
+  requestAnimationFrame(() => el.querySelectorAll('.bar i[data-w]').forEach((i) => (i.style.width = i.dataset.w + '%')));
+  renderUsageWidget();
+}
+// Left-nav usage summary (shown in Terminals): 5 h bar + weekly for every installed tool.
+function renderUsageWidget() {
+  const rows = Object.keys(USAGE).filter((t) => S.tools.installed[t]).map((t) => {
+    const { session, week } = pickLimits((usageOf(t) || {}).items || []), main = session || week;
+    const pct = main ? main.percentUsed : null;
+    return `<div class="u-row"><div class="w-row"><span>${esc(USAGE[t].name)}</span><b>${pct == null ? '–' : pct + '%'}</b></div>
+      <div class="bar ${pct >= 80 ? 'hot' : ''}"><i style="width:${pct || 0}%"></i></div>
+      <div class="u-week">${main && main !== week && week ? `Weekly ${week.percentUsed}%` : main === week && main ? 'Weekly' : 'No data yet'}</div></div>`;
+  }).join('');
+  $('#usageWidget').innerHTML = `<div class="w-head">Usage <span>5 h · weekly</span></div>${rows || '<div class="u-week">No AI tool installed</div>'}`;
+}
+$('#dashboard').addEventListener('click', async (e) => {
   const i = e.target.closest('[data-install]');
   if (i) return showInstall(i.dataset.install);
   const r = e.target.closest('[data-refresh]');
@@ -355,6 +401,7 @@ $('#panel').addEventListener('click', async (e) => {
   const seg = e.target.closest('[data-act]');
   if (seg) { S.activityTool = seg.dataset.act; renderActivity(); }
   if (e.target.closest('#findModel')) openFinder();
+  if (e.target.closest('#freeRam')) openFreeRam();
 });
 
 /* ---------- local activity (session logs) ---------- */
@@ -383,6 +430,29 @@ function renderActivity() {
     <div class="reset" style="margin-top:6px">From local logs. Counts input + output + cache writes.</div>`;
   requestAnimationFrame(() => $('#activity').querySelectorAll('.bar i[data-w]').forEach((i) => (i.style.width = i.dataset.w + '%')));
 }
+async function refreshLive() {
+  const r = await api.usageLive();
+  for (const t of ['claude', 'codex']) {
+    if (r[t] && r[t].at !== S.live[t]?.at && !S.loading[t]) { S.live[t] = r[t]; renderUsage(t); }
+  }
+}
+// No live feed (Claude status line without rate_limits, Codex with no sessions, Gemini never):
+// read each CLI's own usage screen in a hidden terminal, at most every 10 minutes, one at a time.
+const AUTO_MS = 10 * 60e3;
+let autoBusy = false;
+async function autoCapture() {
+  if (autoBusy || document.hidden) return;
+  autoBusy = true;
+  try {
+    for (const t of Object.keys(USAGE)) {
+      if (!S.tools.installed[t] || S.loading[t]) continue;
+      if (Date.now() - Math.max(S.live[t]?.at || 0, S.usage[t]?.at || 0) < AUTO_MS) continue;
+      S.loading[t] = true; renderUsage(t);
+      S.usage[t] = await api.capture(t);
+      S.loading[t] = false; renderUsage(t);
+    }
+  } finally { autoBusy = false; }
+}
 async function refreshLogs() { S.logs = await api.usageLogs(); renderActivity(); }
 
 /* ---------- local model + system ---------- */
@@ -390,11 +460,16 @@ function renderLocal() {
   const o = S.tools.ollama, d = S.settings.defaultModel;
   const status = !S.tools.installed.ollama ? 'Not installed' : o.running ? 'Running' : 'App not open';
   const loaded = o.loaded.length ? o.loaded.map((m) => `<div class="kv"><span>${esc(m.name)}</span><span>${m.ramGB} GB RAM</span></div>`).join('') : '<div class="kv"><span>In memory</span><span class="na">none</span></div>';
+  const pill = $('#modelPill');
+  pill.className = 'model-pill ' + (o.running ? 'on' : '');
+  pill.innerHTML = `${ICONS.ollama}<span>${o.running ? 'Local' : 'Offline'}</span><b>${d ? esc(d.split('/').pop()) : 'no model'}</b>`;
+  pill.title = 'Local model: click to find the best one for this Mac';
+  pill.onclick = openFinder;
   $('#localCard').innerHTML = `<div class="card-head">${ICONS.ollama}<h2>Local model</h2></div>
     <div class="kv"><span>Ollama</span><span>${status}</span></div>
     <div class="kv"><span>Default model</span><span title="${esc(d)}">${d ? esc(d) : '<span class="na">not set</span>'}</span></div>
     ${loaded}
-    <button class="btn primary" id="findModel" style="margin-top:10px;width:100%;justify-content:center">Find best local model</button>
+    <button class="btn" id="findModel" style="margin-top:10px;width:100%;justify-content:center">Find best local model</button>
     ${!S.tools.installed.ollama ? '<p class="small muted" style="margin:8px 0 0">Needs Ollama. <button class="link-btn" data-install="ollama">How to install</button></p>' : ''}`;
 }
 
@@ -406,7 +481,11 @@ function renderSystemShell() {
   $('#systemCard').innerHTML = `<div class="card-head"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="12" rx="2"/><path d="M8 21h8M12 17v4"/></svg><h2>System</h2><span class="small muted" id="chip"></span></div>
     <svg width="0" height="0" style="position:absolute"><defs><linearGradient id="ringGrad"><stop offset="0" style="stop-color:var(--accent)"/><stop offset="1" style="stop-color:var(--accent-2)"/></linearGradient></defs></svg>
     <div class="rings"><div class="ring" id="ramRing">${ring(0)}<div class="num">–</div><div class="lbl">Memory</div></div><div class="ring" id="cpuRing">${ring(0)}<div class="num">–</div><div class="lbl">CPU</div></div></div>
-    <div class="kv small" style="margin-top:8px"><span>Memory used</span><span id="ramText">–</span></div>`;
+    <div class="kv small" style="margin-top:8px"><span>Memory used</span><span id="ramText">–</span></div>
+    <button class="btn primary" id="freeRam" style="margin-top:10px;width:100%;justify-content:center">Free up memory</button>`;
+  $('#sysWidget').innerHTML = `<div class="w-head"><span class="live-dot"></span>This Mac</div>
+    <div class="w-row"><span>Memory</span><b id="wRam">–</b></div><div class="bar"><i id="wRamBar"></i></div>
+    <div class="w-row"><span>CPU</span><b id="wCpu">–</b></div><div class="bar"><i id="wCpuBar"></i></div>`;
 }
 function setRing(id, pct, text) {
   const el = $(id), c = 2 * Math.PI * 32;
@@ -420,7 +499,42 @@ async function tickSystem() {
   setRing('#ramRing', (s.used / s.total) * 100, Math.round((s.used / s.total) * 100) + '%');
   setRing('#cpuRing', s.cpu, s.cpu + '%');
   $('#ramText').textContent = `${usedGB.toFixed(1)} of ${Math.round(totGB)} GB`;
+  const ramPct = Math.round((s.used / s.total) * 100);
+  $('#wRam').textContent = `${usedGB.toFixed(1)} GB`; $('#wRamBar').style.width = ramPct + '%';
+  $('#wCpu').textContent = s.cpu + '%'; $('#wCpuBar').style.width = s.cpu + '%';
   $('#topStatus').innerHTML = `<span>RAM <b>${usedGB.toFixed(1)}/${Math.round(totGB)} GB</b></span><span>CPU <b>${s.cpu}%</b></span><span>Tabs <b>${S.tabs.length}</b></span>`;
+}
+
+/* ---------- free up memory ---------- */
+async function openFreeRam() {
+  showModal('<h2>Free up memory</h2><h1>Looking at open apps…</h1>');
+  const [apps, tools] = await Promise.all([api.apps(), api.tools()]);
+  const loaded = tools.ollama.loaded || [];
+  const row = (kind, name, size, hint) => `<label class="free-row"><input type="checkbox" data-${kind}="${esc(name)}"><span>${esc(name)}${hint ? `<small>${hint}</small>` : ''}</span><b>${size}</b></label>`;
+  const gb = (mb) => mb >= 1024 ? (mb / 1024).toFixed(1) + ' GB' : mb + ' MB';
+  showModal(`<h2>Free up memory</h2><h1>Close what you don't need</h1>
+    <p class="muted small" style="margin:-8px 0 14px">Apps close like with ⌘Q: if something isn't saved, the app asks first. Sizes are estimates.</p>
+    ${loaded.length ? `<div class="sub-head">Local models in memory</div>${loaded.map((m) => row('model', m.name, m.ramGB + ' GB', 'Unloads it. It reloads next time you use it.')).join('')}` : ''}
+    <div class="sub-head">Open apps</div>
+    <div class="free-list">${apps.length ? apps.map((a) => row('app', a.name, '≈ ' + gb(a.mb))).join('') : '<p class="na">No other apps using much memory.</p>'}</div>
+    <div class="modal-foot"><span class="small muted" id="freeSum" style="margin-right:auto">Nothing selected</span><button class="btn" data-close>Cancel</button><button class="btn primary" id="freeGo" disabled>Close selected</button></div>`);
+  const body = $('#modalBody'), boxes = () => [...body.querySelectorAll('input:checked')];
+  body.onchange = () => {
+    const n = boxes().length;
+    $('#freeGo').disabled = !n;
+    $('#freeSum').textContent = n ? `${n} selected` : 'Nothing selected';
+  };
+  $('#freeGo').onclick = async () => {
+    const sel = { apps: boxes().filter((b) => b.dataset.app).map((b) => b.dataset.app), models: boxes().filter((b) => b.dataset.model).map((b) => b.dataset.model) };
+    const before = (await api.system()).used;
+    $('#freeGo').disabled = true; $('#freeGo').textContent = 'Closing…';
+    const r = await api.freeMemory(sel);
+    closeModal();
+    await new Promise((res) => setTimeout(res, 2500)); // let apps finish quitting before measuring
+    const freed = (before - (await api.system()).used) / 1024 ** 3;
+    toast((r.quit < r.asked ? `${r.asked - r.quit} app(s) did not close (maybe waiting for you to save). ` : '') + (freed > 0.05 ? `Freed about ${freed.toFixed(1)} GB` : 'Done'));
+    tickSystem(); refreshTools();
+  };
 }
 
 /* ---------- best local model finder ---------- */
@@ -491,23 +605,25 @@ function applyAccent(c) {
 
 /* ---------- home ---------- */
 function renderHome() {
-  const recents = [...new Set([...S.favorites, ...Object.keys(S.lastAi)])]
-    .map((n) => S.projects.projects.find((p) => p.name === n)).filter(Boolean).slice(0, 8);
   const h = new Date().getHours();
+  const quick = ['claude', 'codex', 'gemini', 'ollama', 'shell'].map((k) => `<button data-quick="${k}" class="${installed(k) ? '' : 'off'}"><span class="ico">${ICONS[k]}</span><span class="t">${esc(S.presets[k].label)}</span><span class="s">${installed(k) ? DESC[k] : 'Not installed'}</span></button>`).join('');
   $('#home').innerHTML = `
-    <h1>${h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening'}. <em>Command center online.</em></h1>
-    <p class="lead">Pick a project on the left, or start something below.</p>
-    <h3>Quick launch</h3>
-    <div class="quick">${['claude', 'codex', 'ollama', 'shell'].map((k) => `<button data-quick="${k}"><span class="ico">${ICONS[k]}</span><span class="t">${esc(S.presets[k].label)}</span><span class="s">${installed(k) ? DESC[k] : 'Not installed'}</span></button>`).join('')}</div>
-    ${recents.length ? `<h3>Pinned and recent</h3><div class="recent">${recents.map((p) => { const ai = S.lastAi[p.name] || 'claude'; return `<button data-recent="${esc(p.name)}" title="Open with ${esc(S.presets[ai].label)}">${ICONS[ai]}<span><div>${esc(p.name)}</div><div class="s">${esc(S.presets[ai].label)}${S.favorites.includes(p.name) ? ' · ★' : ''}</div></span></button>`; }).join('')}</div>` : ''}
-    <h3>Shortcuts</h3>
-    <div class="keys"><span><kbd>⌘T</kbd> new tab</span><span><kbd>⌘W</kbd> close tab</span><span><kbd>⌘1</kbd>–<kbd>⌘9</kbd> switch tab</span><span><kbd>⌘D</kbd> split view</span><span><kbd>⌘C</kbd> / <kbd>⌘V</kbd> copy / paste</span></div>`;
+    <div class="headline-top">
+      <div><div class="eyebrow">${h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening'} · ${S.projects.projects.length} projects</div><h1>Launch an AI in any project.</h1></div>
+      <div class="headline-actions"><button class="chip" data-go="term">Open terminals</button><button class="chip primary" data-go="new">New terminal</button></div>
+    </div>
+    <div class="quick">${quick}</div>`;
+  $('#emptyStage').innerHTML = `<span class="empty-ico">${ICONS.shell}</span><h1>Pick a project.</h1>
+    <p class="muted">Choose one on the left, or start a terminal in your projects folder.</p>
+    <div class="chips">${['claude', 'codex', 'gemini', 'ollama', 'shell'].map((k) => `<button class="chip ${installed(k) ? '' : 'off'}" data-quick="${k}">${esc(S.presets[k].label)}</button>`).join('')}</div>
+    <div class="keys"><span><kbd>⌘T</kbd> new tab</span><span><kbd>⌘W</kbd> close</span><span><kbd>⌘1</kbd>–<kbd>⌘9</kbd> switch</span><span><kbd>⌘D</kbd> split</span></div>`;
 }
+$('#emptyStage').addEventListener('click', (e) => { const q = e.target.closest('[data-quick]'); if (q) openTab({ preset: q.dataset.quick, cwd: S.projects.exists ? S.projects.dir : null }); });
 $('#home').addEventListener('click', (e) => {
+  const g = e.target.closest('[data-go]');
+  if (g) return g.dataset.go === 'term' ? setView('term') : openLauncher(null);
   const q = e.target.closest('[data-quick]');
   if (q) return openTab({ preset: q.dataset.quick, cwd: S.projects.exists ? S.projects.dir : null });
-  const r = e.target.closest('[data-recent]');
-  if (r) { const p = S.projects.projects.find((x) => x.name === r.dataset.recent); openTab({ preset: S.lastAi[p.name] || 'claude', cwd: p.path, project: p.name }); }
 });
 
 /* ---------- boot ---------- */
@@ -521,8 +637,11 @@ $('#home').addEventListener('click', (e) => {
   await refreshTools();
   renderHome();
   for (const t of st.tabs || []) await openTab({ ...t, quiet: true });
-  if (st.tabs?.length) activate(S.tabs[0]?.uid ?? 'home');
+  if (S.tabs[0]) S.active = S.tabs[0].uid; // restored tabs wait behind the Terminals view
+  setView('dash'); renderTabs();
   tickSystem(); setInterval(tickSystem, 3000);
+  await refreshLive(); setInterval(() => !document.hidden && refreshLive(), 15000); // before autoCapture, so a live value skips the hidden terminal
+  autoCapture(); setInterval(autoCapture, 60e3);
   refreshLogs(); setInterval(() => !document.hidden && refreshLogs(), 120000);
   setInterval(() => !document.hidden && refreshTools(), 30000);
 })();

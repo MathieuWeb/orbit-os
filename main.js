@@ -13,8 +13,10 @@ const MODEL_RE = /^[\w.\-/:]+$/; // Ollama tags: letters, digits, . - _ / :
 
 // Add a preset here: key -> label, binary to check, and the command to run (null = plain shell).
 const PRESETS = {
-  claude: { label: 'Claude Code', bin: 'claude', cmd: () => 'claude' },
+  claude: { label: 'Claude Code', bin: 'claude', cmd: () => `claude --settings ${shq(claudeStatusSettings())}` },
   codex: { label: 'Codex', bin: 'codex', cmd: () => 'codex' },
+  // Key stays 'gemini' (saved tabs/settings); Google replaced Gemini CLI with Antigravity CLI (agy) in June 2026.
+  gemini: { label: 'Antigravity', bin: 'gemini', cmd: () => 'agy' },
   ollama: { label: 'Local model', bin: 'ollama', cmd: (o) => `ollama run ${o.model}` },
   shell: { label: 'Plain terminal', bin: null, cmd: () => null },
 };
@@ -47,6 +49,21 @@ function baseEnv(preset) {
     COLORTERM: 'truecolor',
     TERM_PROGRAM: 'AI-Terminal',
   };
+}
+
+const shq = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
+const statusFile = () => path.join(app.getPath('userData'), 'claude-status.json');
+
+// Live Claude limits: app-launched sessions get a status line script that saves the status JSON
+// (it carries `rate_limits`), then runs the user's own status line so theirs still shows.
+function claudeStatusSettings() {
+  const dir = app.getPath('userData');
+  let own = '';
+  try { own = JSON.parse(fs.readFileSync(path.join(require('os').homedir(), '.claude', 'settings.json'), 'utf8')).statusLine?.command || ''; } catch {}
+  const f = statusFile(), script = path.join(dir, 'claude-status.sh'), settings = path.join(dir, 'claude-settings.json');
+  fs.writeFileSync(script, `#!/bin/sh\nf=${shq(f)}\ncat > "$f.tmp" && mv "$f.tmp" "$f"\n${own ? `sh -c ${shq(own)} < "$f"\n` : ''}`);
+  fs.writeFileSync(settings, JSON.stringify({ statusLine: { type: 'command', command: `sh ${shq(script)}` } }));
+  return settings;
 }
 
 function catalogFile() { return path.join(app.getPath('userData'), 'models.json'); }
@@ -122,17 +139,41 @@ ipcMain.handle('projects:chooseRoot', async () => {
 
 // ---------- tools, system, usage ----------
 ipcMain.handle('tools:status', async () => {
-  const [claude, codex, ollama] = await Promise.all(['claude', 'codex', 'ollama'].map(system.which));
-  return { installed: { claude: !!claude, codex: !!codex, ollama: !!ollama }, ollama: await system.ollama() };
+  const [claude, codex, gemini, ollama] = await Promise.all(['claude', 'codex', 'agy', 'ollama'].map(system.which));
+  return { installed: { claude: !!claude, codex: !!codex, gemini: !!gemini, ollama: !!ollama }, ollama: await system.ollama() };
+});
+ipcMain.handle('system:apps', () => system.apps());
+ipcMain.handle('system:free', async (_e, { apps = [], models = [] }) => {
+  // Only quit apps that are in our own current list; the renderer's names are not trusted as-is.
+  const known = new Set((await system.apps()).map((a) => a.name));
+  const quit = await Promise.all(apps.filter((n) => known.has(n)).map(system.quitApp));
+  const loaded = new Set(((await system.ollama()).loaded || []).map((m) => m.name));
+  await Promise.all(models.filter((m) => loaded.has(m)).map(system.unloadModel));
+  return { quit: quit.filter(Boolean).length, asked: apps.length };
 });
 ipcMain.handle('system:stats', async () => ({ ...(await system.memory()), cpu: system.cpu() }));
 ipcMain.handle('usage:logs', async () => {
   const [claude, codex] = await Promise.all([usage.claudeStats(), usage.codexStats()]);
   return { claude, codex };
 });
+// The renderer polls every 15 s; vendor servers are asked at most every 45 s.
+const apiCache = { at: 0, claude: null, codex: null };
+ipcMain.handle('usage:live', async () => {
+  if (Date.now() - apiCache.at > 45e3) {
+    apiCache.at = Date.now();
+    [apiCache.claude, apiCache.codex] = await Promise.all([usage.claudeApi(), usage.codexApi()]);
+  }
+  let claude = apiCache.claude;
+  if (!claude) try {
+    const f = statusFile(), items = usage.claudeLive(JSON.parse(fs.readFileSync(f, 'utf8')));
+    if (items.length) claude = { items, at: fs.statSync(f).mtimeMs };
+  } catch {}
+  const codex = apiCache.codex || usage.codexLive();
+  return { claude: claude && { ok: true, live: true, ...claude }, codex: codex && { ok: true, live: true, ...codex } };
+});
 const capturing = {};
 ipcMain.handle('usage:capture', async (_e, tool) => {
-  const cfg = { claude: { cmd: 'claude', slash: '/usage' }, codex: { cmd: 'codex', slash: '/status' } }[tool];
+  const cfg = { claude: { cmd: 'claude', slash: '/usage' }, codex: { cmd: 'codex', slash: '/status' }, gemini: { cmd: 'agy', slash: '/usage' } }[tool];
   if (!cfg) return null;
   if (!(await system.which(cfg.cmd))) return { ok: false, error: 'not installed', at: Date.now() };
   // One capture per tool at a time; a second click reuses the running one.
@@ -140,6 +181,7 @@ ipcMain.handle('usage:capture', async (_e, tool) => {
     .catch((e) => ({ ok: false, error: e.message, text: '' }))
     .finally(() => { capturing[tool] = null; });
   const r = await capturing[tool];
+  if (r.ok && /How would you like to authenticate|Sign in with Google/i.test(r.text || '')) return { ...r, ok: false, error: 'Not signed in yet. Open it once in a tab and log in.', items: [], at: Date.now() };
   return { ...r, items: r.ok ? usage.parseUsage(r.text || '') : [], at: Date.now() };
 });
 

@@ -6,8 +6,8 @@ const DEFAULTS = {
   settings: {
     projectsRoot: '~/claude-projects',
     defaultModel: '',
-    accent: '#22d3ee',
-    env: { claude: '', codex: '', ollama: '', shell: '' }, // "KEY=value" per line
+    accent: '#b4a5f0',
+    env: { claude: '', codex: '', gemini: '', ollama: '', shell: '' }, // "KEY=value" per line
   },
   window: { width: 1440, height: 900 },
   tabs: [],
@@ -20,6 +20,7 @@ module.exports = function createStore(dir) {
   let data;
   try { data = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { data = {}; }
   data = { ...DEFAULTS, ...data, settings: { ...DEFAULTS.settings, ...data.settings, env: { ...DEFAULTS.settings.env, ...(data.settings || {}).env } } };
+  if (data.settings.accent === "#22d3ee") data.settings.accent = DEFAULTS.settings.accent; // old default from the v1 theme
   let timer;
   return {
     get: (k) => data[k],
