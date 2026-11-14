@@ -330,6 +330,12 @@ $('#toolsRefresh').onclick = () => refreshTools(true);
 
 async function refreshTools(announce) {
   S.tools = await api.tools();
+  // No default (or it was removed from Ollama) but models are installed: use the first one.
+  const names = S.tools.ollama.models.map((m) => m.name);
+  if (S.tools.ollama.running && names.length && !names.includes(S.settings.defaultModel)) {
+    S.settings.defaultModel = names[0];
+    api.setState('settings', S.settings);
+  }
   renderModels(); renderLocal(); Object.keys(USAGE).forEach(renderUsage);
   if (announce) toast('Tools checked');
 }
