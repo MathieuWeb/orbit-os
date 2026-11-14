@@ -503,3 +503,4 @@ p { text-wrap: pretty; max-width: 70ch; }
 .orb-meta .big, .stat .v, .ring .num, .w-row b, .hbar b, .meter-top b, .nav-count, .count, .kv span:last-child { font-variant-numeric: tabular-nums; }
 .headline { margin-bottom: 40px; } /* 8: whitespace replaces the removed "Overview" label */
 @media (max-width: 1500px) { #modelCards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 32px; } }
+.brand-mark { background: none; border-radius: 0; box-shadow: none; width: 30px; height: 30px; }

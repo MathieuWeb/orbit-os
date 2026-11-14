@@ -1,4 +1,4 @@
-# AI Terminal
+# Orbit OS
 
 A command center for Claude Code, Codex and local Ollama models, in real terminals (Electron + xterm.js + node-pty).
 
@@ -19,7 +19,7 @@ Command Line Tools vs the macOS 27 SDK), it falls back to node-pty's prebuilt N-
 npm run install:app
 ```
 
-Builds, signs locally (ad hoc) and installs `/Applications/AI Terminal.app`. Run it again after any code change.
+Builds, signs locally (ad hoc) and installs `/Applications/Orbit OS.app`. Run it again after any code change.
 
 ## Layout of the code
 

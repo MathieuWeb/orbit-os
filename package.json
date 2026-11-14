@@ -1,8 +1,8 @@
 {
   "name": "ai-terminal",
-  "productName": "AI Terminal",
+  "productName": "Orbit OS",
   "version": "1.0.0",
-  "description": "Futuristic command center for Claude Code, Codex and local Ollama models",
+  "description": "Orbit OS: one place to launch Claude Code, Codex, Antigravity and local models, with live plan usage",
   "main": "main.js",
   "private": true,
   "scripts": {
@@ -25,7 +25,7 @@
   },
   "build": {
     "appId": "local.aiterminal",
-    "productName": "AI Terminal",
+    "productName": "Orbit OS",
     "npmRebuild": false,
     "mac": { "target": "dir", "category": "public.app-category.developer-tools", "icon": "build/icon.png" },
     "asarUnpack": ["node_modules/node-pty/**"],

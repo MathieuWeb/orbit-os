@@ -1,4 +1,4 @@
-/* AI Terminal renderer: plain JS, no framework. `api` is the global from preload.js. */
+/* Orbit OS renderer: plain JS, no framework. `api` is the global from preload.js. */
 const $ = (s, el = document) => el.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const base = (p) => String(p || '').split('/').filter(Boolean).pop() || '~';

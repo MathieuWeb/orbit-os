@@ -8,6 +8,9 @@ const usage = require('./services/usage');
 const finder = require('./services/modelFinder');
 const system = require('./services/system');
 
+// Renamed from "AI Terminal": keep the existing settings, tabs and favorites folder.
+app.setPath('userData', path.join(app.getPath('appData'), 'AI Terminal'));
+
 const SHELL = process.env.SHELL || '/bin/zsh';
 const MODEL_RE = /^[\w.\-/:]+$/; // Ollama tags: letters, digits, . - _ / :
 
@@ -217,7 +220,7 @@ function createWindow() {
 
 // No Cmd+W "close window" here: the renderer uses Cmd+W to close a tab.
 Menu.setApplicationMenu(Menu.buildFromTemplate([
-  { label: 'AI Terminal', submenu: [{ role: 'about' }, { type: 'separator' }, { role: 'hide' }, { role: 'hideOthers' }, { type: 'separator' }, { role: 'quit' }] },
+  { label: 'Orbit OS', submenu: [{ role: 'about' }, { type: 'separator' }, { role: 'hide' }, { role: 'hideOthers' }, { type: 'separator' }, { role: 'quit' }] },
   { label: 'Edit', submenu: [{ role: 'copy' }, { role: 'paste' }, { role: 'selectAll' }] },
   { label: 'View', submenu: [{ role: 'reload' }, { role: 'toggleDevTools' }, { role: 'togglefullscreen' }] },
   { label: 'Window', submenu: [{ role: 'minimize' }, { role: 'zoom' }] },

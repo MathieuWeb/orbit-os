@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <radialGradient id="body" cx="50%" cy="58%" r="55%">
+      <stop offset="0" stop-color="#1c1b22"/>
+      <stop offset="1" stop-color="#08080a"/>
+    </radialGradient>
+    <linearGradient id="fill" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#c9bdff"/>
+      <stop offset="1" stop-color="#6e5fd0"/>
+    </linearGradient>
+    <radialGradient id="shine" cx="34%" cy="26%" r="40%">
+      <stop offset="0" stop-color="#ffffff" stop-opacity=".22"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <clipPath id="ball"><circle cx="50" cy="50" r="46"/></clipPath>
+  </defs>
+  <circle cx="50" cy="50" r="46" fill="url(#body)"/>
+  <g clip-path="url(#ball)">
+    <!-- the usage level: filled about two thirds, with a soft surface line -->
+    <path d="M0 44 C 18 39, 34 49, 50 44 S 82 39, 100 44 V100 H0 Z" fill="url(#fill)"/>
+    <path d="M0 44 C 18 39, 34 49, 50 44 S 82 39, 100 44" fill="none" stroke="#efeaff" stroke-width="1.6" stroke-opacity=".9"/>
+  </g>
+  <circle cx="50" cy="50" r="46" fill="url(#shine)"/>
+  <circle cx="50" cy="50" r="45.4" fill="none" stroke="#ffffff" stroke-opacity=".14" stroke-width="1.2"/>
+</svg>

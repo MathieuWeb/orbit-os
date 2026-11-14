@@ -8,7 +8,7 @@ const pty = path.join(__dirname, '..', 'node_modules', 'node-pty');
 try {
   execSync('npx electron-rebuild -f -w node-pty', { stdio: 'inherit' });
 } catch {
-  console.warn('\n[AI Terminal] electron-rebuild failed, using node-pty prebuilt binary instead.\n');
+  console.warn('\n[Orbit OS] electron-rebuild failed, using node-pty prebuilt binary instead.\n');
   fs.rmSync(path.join(pty, 'build'), { recursive: true, force: true });
 }
 // npm drops the exec bit on spawn-helper, which makes every spawn fail with "posix_spawnp failed".
