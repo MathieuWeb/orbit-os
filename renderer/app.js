@@ -461,7 +461,7 @@ function usageOf(tool) { const c = S.usage[tool], l = S.live[tool]; return l && 
 // The 5 h session limit (headline) and the all-models weekly limit (shown under it).
 function pickLimits(items) {
   const week = items.find((m) => /week/i.test(m.label) && !/opus|sonnet|fable/i.test(m.label));
-  const session = items.find((m) => m !== week && /session|5 ?h|hour/i.test(m.label)) || items.find((m) => m !== week);
+  const session = items.find((m) => m !== week && /session|5 ?h|hour/i.test(m.label)) || items.find((m) => m !== week && !/week/i.test(m.label));
   return { session, week };
 }
 function renderUsage(tool) {

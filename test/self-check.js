@@ -62,6 +62,11 @@ const gem = parseUsage('Model Usage   Reqs   Usage left\ngemini-2.5-pro   12   9
 assert.deepStrictEqual(gem.map((x) => [x.label, x.percentUsed, x.resets]), [['gemini-2.5-pro', 6.6, 'in 20h 3m'], ['gemini-2.5-flash', 0, 'in 20h 3m']]);
 console.log('Gemini usage parse OK');
 
+// Antigravity /usage: one weekly limit per model group.
+const agy = parseUsage('GEMINI MODELS\n  Models within this group: Gemini 3.8 Flash\n\n  Weekly Limit Remaining\n  [██████████░] 97.10%\n  Refreshes in 133h 56m\n\nCLAUDE AND GPT MODELS\n  Weekly Limit Remaining\n  [███████████] 100.00%\n  Quota available');
+assert.deepStrictEqual(agy.map((x) => [x.label, x.percentUsed, x.resets]), [['Gemini models weekly', 2.9, 'in 133h 56m'], ['Claude and GPT models weekly', 0, null]]);
+console.log('Antigravity usage parse OK');
+
 // Direct usage APIs: real response shapes -> meters.
 const { claudeApiItems, codexApiItems } = require('../services/usage');
 const ca = claudeApiItems({ five_hour: { utilization: 41.0, resets_at: '2026-11-14T15:49:59+00:00' }, seven_day: { utilization: 23.0, resets_at: '2026-11-16T03:59:59+00:00' }, seven_day_opus: null });

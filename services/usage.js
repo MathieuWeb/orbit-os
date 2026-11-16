@@ -32,9 +32,10 @@ async function captureCli({ cmd, slash, cwd, env, shell = process.env.SHELL || '
   try {
     await idle(2500, 20000);
     // The probe folder is an empty app-owned folder, so accepting "trust this folder" is harmless.
-    // The default choice is "No, exit", so move down to "Yes" first.
+    // Move down to "Yes" only when it isn't already selected (Antigravity marks it "> Yes").
     if (/Yes, I trust this folder/i.test(screen())) {
-      p.write('\x1b[B'); await sleep(300); p.write('\r');
+      if (!/[>❯]\s*(\d\.\s*)?Yes, I trust/.test(screen())) { p.write('\x1b[B'); await sleep(300); }
+      p.write('\r');
       last = Date.now(); await idle(2500, 15000);
     }
     if (exited) return { ok: false, text: screen(), error: 'The program closed before the command could run.' };
@@ -61,7 +62,14 @@ function parseUsage(text) {
   const lines = text.split('\n').map((l) => l.replace(/[█▉▊▋▌▍▎▏░▒▓■□━─│╭╮╰╯\[\]]/g, " ").replace(/\s+/g, ' ').trim());
   const items = [];
   let leftCol = false; // Gemini /stats: a "Usage left" column, rows like "gemini-2.5-pro  12  93.4% (Resets in 20h)"
+  let group = ''; // Antigravity /usage: "GEMINI MODELS" / "Weekly Limit Remaining" / "97.10%" / "Refreshes in 133h 56m"
   lines.forEach((l, i) => {
+    if (/^[A-Z][A-Z &]+ MODELS$/.test(l)) group = l.replace(/ MODELS$/, '').toLowerCase().replace(/^./, (c) => c.toUpperCase()).replace(/\bgpt\b/, 'GPT');
+    const wk = /^weekly limit remaining$/i.test(l) && (lines[i + 1] || '').match(/^(\d{1,3}(?:\.\d+)?)\s*%$/);
+    if (wk) {
+      const r = (lines[i + 2] || '').match(/^refreshes\s+(.+)/i);
+      return items.push({ label: `${group || 'All'} models weekly`, percentUsed: Math.round((100 - Number(wk[1])) * 10) / 10, resets: r ? r[1].slice(0, 50) : null });
+    }
     if (/usage (left|remaining)/i.test(l)) leftCol = true;
     const g = leftCol && l.match(/^(gemini[\w.\-]*)\b.*?(\d{1,3}(?:\.\d+)?)\s*%/i);
     if (g) {
