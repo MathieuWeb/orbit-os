@@ -16,7 +16,8 @@
     "@xterm/addon-fit": "0.11.0",
     "@xterm/headless": "6.0.0",
     "@xterm/xterm": "6.0.0",
-    "node-pty": "1.1.0"
+    "node-pty": "1.1.0",
+    "three": "0.160.0"
   },
   "devDependencies": {
     "@electron/rebuild": "4.2.1",
@@ -27,8 +28,22 @@
     "appId": "local.aiterminal",
     "productName": "Orbit OS",
     "npmRebuild": false,
-    "mac": { "target": "dir", "category": "public.app-category.developer-tools", "icon": "build/icon.png" },
-    "asarUnpack": ["node_modules/node-pty/**"],
-    "files": ["main.js", "preload.js", "models.json", "renderer/**", "services/**", "node_modules/**"]
+    "directories": { "output": "dist.noindex" },
+    "mac": {
+      "target": "dir",
+      "category": "public.app-category.developer-tools",
+      "icon": "build/icon.png"
+    },
+    "asarUnpack": [
+      "node_modules/node-pty/**"
+    ],
+    "files": [
+      "main.js",
+      "preload.js",
+      "models.json",
+      "renderer/**",
+      "services/**",
+      "node_modules/**"
+    ]
   }
 }

@@ -1,12 +1,15 @@
-const { app, BrowserWindow, ipcMain, Menu, shell, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, Menu, shell, dialog, clipboard, nativeImage } = require('electron');
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const pty = require('node-pty');
 const createStore = require('./services/store');
 const projects = require('./services/projects');
 const usage = require('./services/usage');
 const finder = require('./services/modelFinder');
 const system = require('./services/system');
+const constellation = require('./services/constellation');
 
 // Renamed from "AI Terminal": keep the existing settings, tabs and favorites folder.
 app.setPath('userData', path.join(app.getPath('appData'), 'AI Terminal'));
@@ -20,7 +23,9 @@ const PRESETS = {
   codex: { label: 'Codex', bin: 'codex', cmd: () => 'codex' },
   // Key stays 'gemini' (saved tabs/settings); Google replaced Gemini CLI with Antigravity CLI (agy) in June 2026.
   gemini: { label: 'Antigravity', bin: 'gemini', cmd: () => 'agy' },
-  ollama: { label: 'Local model', bin: 'ollama', cmd: (o) => `ollama run ${o.model}` },
+  // OpenCode runs the local Ollama model as an agent (config: ~/.config/opencode/opencode.json).
+  opencode: { label: 'OpenCode', bin: 'opencode', cmd: () => 'opencode' },
+  ollama: { label: 'Local model', bin: 'ollama', cmd: (o) => `ollama run ${o.model} --hidethinking` },
   shell: { label: 'Plain terminal', bin: null, cmd: () => null },
 };
 
@@ -142,8 +147,8 @@ ipcMain.handle('projects:chooseRoot', async () => {
 
 // ---------- tools, system, usage ----------
 ipcMain.handle('tools:status', async () => {
-  const [claude, codex, gemini, ollama] = await Promise.all(['claude', 'codex', 'agy', 'ollama'].map(system.which));
-  return { installed: { claude: !!claude, codex: !!codex, gemini: !!gemini, ollama: !!ollama }, ollama: await system.ollama() };
+  const [claude, codex, gemini, ollama, opencode] = await Promise.all(['claude', 'codex', 'agy', 'ollama', 'opencode'].map(system.which));
+  return { installed: { claude: !!claude, codex: !!codex, gemini: !!gemini, ollama: !!ollama, opencode: !!opencode }, ollama: await system.ollama() };
 });
 ipcMain.handle('system:apps', () => system.apps());
 ipcMain.handle('system:free', async (_e, { apps = [], models = [] }) => {
@@ -153,6 +158,12 @@ ipcMain.handle('system:free', async (_e, { apps = [], models = [] }) => {
   const loaded = new Set(((await system.ollama()).loaded || []).map((m) => m.name));
   await Promise.all(models.filter((m) => loaded.has(m)).map(system.unloadModel));
   return { quit: quit.filter(Boolean).length, asked: apps.length };
+});
+// Walks every project folder (~0.5 s): cached 60 s so reopening the view stays instant.
+let cstCache = { at: 0, data: null };
+ipcMain.handle('constellation:data', () => {
+  if (Date.now() - cstCache.at > 60e3) cstCache = { at: Date.now(), data: constellation.collect(projects.expand(store.get('settings').projectsRoot)) };
+  return cstCache.data;
 });
 ipcMain.handle('system:stats', async () => ({ ...(await system.memory()), cpu: system.cpu() }));
 ipcMain.handle('usage:logs', async () => {
@@ -200,7 +211,47 @@ ipcMain.handle('finder:refresh', async () => {
   fs.writeFileSync(catalogFile(), JSON.stringify({ ...catalog, models, refreshed: new Date().toISOString() }, null, 2));
   return { checked: models.length, missing: models.filter((m) => !m.verified).map((m) => m.tag) };
 });
-ipcMain.handle('open:url', (_e, url) => { if (/^https:\/\//.test(url)) shell.openExternal(url); });
+ipcMain.handle('open:url', (_e, url) => { if (/^https?:\/\//.test(url)) shell.openExternal(url); }); // http too, for localhost dev servers
+ipcMain.handle('usage:tabs', async (_e, list) => Object.fromEntries(await Promise.all(list.slice(0, 50)
+  .filter((t) => ['claude', 'codex'].includes(t.tool) && typeof t.cwd === 'string')
+  .map(async (t) => [t.uid, await usage.tabTokens(t.tool, t.cwd, Number(t.since) || Date.now())]))));
+
+// ---------- file paths printed in terminals ----------
+const absPath = (cwd, p) => path.resolve(String(cwd || os.homedir()), String(p).replace(/^~(?=\/|$)/, os.homedir()));
+ipcMain.handle('paths:exist', (_e, cwd, list) => list.slice(0, 50).filter((p) => { try { return fs.statSync(absPath(cwd, p)).isFile(); } catch { return false; } }));
+let editorBin = null;
+// Terminal text is untrusted: open it in an editor or reveal in Finder, never run it.
+ipcMain.handle('open:file', async (_e, cwd, p, line, col) => {
+  const file = absPath(cwd, p);
+  if (!fs.existsSync(file)) return;
+  editorBin ??= (await system.which('code')) || (await system.which('cursor')) || ''; // full path: Finder-launched apps lack the shell PATH
+  const editor = editorBin;
+  if (editor) require('child_process').execFile(editor, ['-g', `${file}:${Number(line) || 1}:${Number(col) || 1}`], () => {});
+  else shell.showItemInFolder(file);
+});
+ipcMain.on('win:focus', () => { if (win) { win.show(); win.focus(); } });
+
+// ---------- clipboard images: keep the last 5 copied images as PNG files ----------
+const CLIPS = 5;
+let clipDir, lastClip = '';
+const clipFiles = () => fs.readdirSync(clipDir).filter((f) => f.endsWith('.png'))
+  .map((f) => path.join(clipDir, f)).sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
+const clipList = () => clipFiles().map((p) => ({ path: p, thumb: nativeImage.createFromPath(p).resize({ height: 120 }).toDataURL() }));
+// shortcut: polls every 1.5 s (Electron has no clipboard-change event), fine for one window.
+async function pollClipboard() {
+  if (!(await clipboard.has('image/png'))) return; // Electron 45+: async W3C-style clipboard API
+  const item = (await clipboard.read()).find((i) => i.types.includes('image/png'));
+  if (!item) return;
+  const png = Buffer.from(await (await item.getType('image/png')).arrayBuffer()), hash = crypto.createHash('sha1').update(png).digest('hex').slice(0, 16);
+  if (hash === lastClip) return;
+  lastClip = hash;
+  const file = path.join(clipDir, hash + '.png');
+  if (fs.existsSync(file)) { const now = new Date(); fs.utimesSync(file, now, now); } // copied again: move to front
+  else fs.writeFileSync(file, png);
+  clipFiles().slice(CLIPS).forEach((p) => fs.rmSync(p, { force: true }));
+  win?.webContents.send('clips:changed', clipList());
+}
+ipcMain.handle('clips:list', () => clipList());
 
 // ---------- window ----------
 function createWindow() {
@@ -229,6 +280,10 @@ Menu.setApplicationMenu(Menu.buildFromTemplate([
 app.whenReady().then(() => {
   store = createStore(app.getPath('userData'));
   createWindow();
+  clipDir = path.join(app.getPath('userData'), 'clips');
+  fs.mkdirSync(clipDir, { recursive: true });
+  let polling = false;
+  setInterval(() => { if (polling) return; polling = true; pollClipboard().catch(() => {}).finally(() => (polling = false)); }, 1500);
   win.webContents.once('did-finish-load', watchProjects);
   // Dev only: AIT_SHOT=/path.png [AIT_EVAL="js"] npm start -> runs the JS, saves a screenshot, quits.
   if (process.env.AIT_SHOT) win.webContents.on('console-message', (e) => console.log('[renderer]', e.message || e));

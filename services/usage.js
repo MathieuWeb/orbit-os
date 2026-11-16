@@ -118,6 +118,35 @@ function add(stats, sessionsSeen, ts, tokens, sessionId, project) {
   if (day === today && !sessionsSeen.has('t:' + sessionId)) { sessionsSeen.add('t:' + sessionId); stats.today.sessions++; }
 }
 
+const claudeTokens = (u) => (u.input_tokens || 0) + (u.output_tokens || 0) + (u.cache_creation_input_tokens || 0);
+const codexTokens = (u) => (u.input_tokens || 0) - (u.cached_input_tokens || 0) + (u.output_tokens || 0);
+
+// Tokens one open tab has used: log lines for that folder written since the tab opened.
+// shortcut: two tabs of the same AI in the same folder share one total; split by session id if that matters.
+async function tabTokens(tool, cwd, since, root) {
+  const claude = tool === 'claude';
+  root ||= path.join(os.homedir(), claude ? '.claude/projects' : '.codex/sessions');
+  let total = 0;
+  const ids = new Set();
+  for (const f of walk(root, '.jsonl', since)) {
+    let here = claude;
+    await eachLine(f, (line) => {
+      if (claude ? !line.includes('"usage"') : !line.includes('session_meta') && !line.includes('token_count')) return;
+      let o; try { o = JSON.parse(line); } catch { return; }
+      if (Date.parse(o.timestamp) < since && o.type !== 'session_meta') return;
+      if (claude) {
+        const u = o.type === 'assistant' && o.cwd === cwd && o.message && o.message.usage, id = u && (o.message.id || o.uuid);
+        if (u && !ids.has(id)) { ids.add(id); total += claudeTokens(u); }
+      } else {
+        const p = o.payload || {};
+        if (o.type === 'session_meta') here = p.cwd === cwd;
+        else if (here && p.type === 'token_count' && p.info && p.info.last_token_usage) total += codexTokens(p.info.last_token_usage);
+      }
+    });
+  }
+  return total;
+}
+
 // Tokens = input + output + cache writes (cache reads are excluded: they re-count the same context).
 async function claudeStats(root = path.join(os.homedir(), '.claude', 'projects')) {
   const stats = emptyStats(), seen = new Set(), ids = new Set();
@@ -130,7 +159,7 @@ async function claudeStats(root = path.join(os.homedir(), '.claude', 'projects')
       const id = o.message.id || o.uuid;
       if (ids.has(id)) return; // one API message is logged once per content block
       ids.add(id);
-      const tokens = (u.input_tokens || 0) + (u.output_tokens || 0) + (u.cache_creation_input_tokens || 0);
+      const tokens = claudeTokens(u);
       add(stats, seen, o.timestamp, tokens, o.sessionId || f, path.basename(o.cwd || path.dirname(f)));
     });
   }
@@ -149,7 +178,7 @@ async function codexStats(root = path.join(os.homedir(), '.codex', 'sessions')) 
       if (o.type === 'session_meta' && p.cwd) project = path.basename(p.cwd);
       const u = p.type === 'token_count' && p.info && p.info.last_token_usage;
       if (!u) return;
-      const tokens = (u.input_tokens || 0) - (u.cached_input_tokens || 0) + (u.output_tokens || 0);
+      const tokens = codexTokens(u);
       add(stats, seen, o.timestamp, tokens, f, project);
     });
   }
@@ -242,4 +271,4 @@ async function codexApi() {
   } catch { return null; }
 }
 
-module.exports = { captureCli, parseUsage, claudeStats, codexStats, claudeLive, codexLive, claudeApi, codexApi, claudeApiItems, codexApiItems };
+module.exports = { tabTokens, captureCli, parseUsage, claudeStats, codexStats, claudeLive, codexLive, claudeApi, codexApi, claudeApiItems, codexApiItems };

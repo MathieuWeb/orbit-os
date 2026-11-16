@@ -26,4 +26,11 @@ contextBridge.exposeInMainWorld('api', {
   refreshCatalog: () => ipcRenderer.invoke('finder:refresh'),
   onDefaultModel: on('model:default'),
   openUrl: (u) => ipcRenderer.invoke('open:url', u),
+  constellation: () => ipcRenderer.invoke('constellation:data'),
+  tabTokens: (list) => ipcRenderer.invoke('usage:tabs', list),
+  existingPaths: (cwd, list) => ipcRenderer.invoke('paths:exist', cwd, list),
+  openFile: (cwd, p, line, col) => ipcRenderer.invoke('open:file', cwd, p, line, col),
+  focusWindow: () => ipcRenderer.send('win:focus'),
+  clips: () => ipcRenderer.invoke('clips:list'),
+  onClips: on('clips:changed'),
 });

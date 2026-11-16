@@ -12,12 +12,14 @@ const ICONS = {
   codex: '<svg viewBox="0 0 24 24"><path d="M12 2.5l8.2 4.75v9.5L12 21.5l-8.2-4.75v-9.5z"/><path d="M10 9.5L7.5 12l2.5 2.5M14 9.5l2.5 2.5-2.5 2.5"/></svg>',
   gemini: '<svg viewBox="0 0 24 24"><path d="M12 3c0 5 4 9 9 9-5 0-9 4-9 9 0-5-4-9-9-9 5 0 9-4 9-9z"/></svg>',
   ollama: '<svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2.5v3M15 2.5v3M9 18.5v3M15 18.5v3M2.5 9h3M2.5 15h3M18.5 9h3M18.5 15h3"/><circle cx="12" cy="12" r="2"/></svg>',
+  opencode: '<svg viewBox="0 0 24 24"><path d="M8 7l-5 5 5 5M16 7l5 5-5 5M13.5 5l-3 14"/></svg>',
   shell: '<svg viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="15" rx="2"/><path d="M7 10l3 2.5L7 15M12.5 15H17"/></svg>',
   home: '<svg viewBox="0 0 24 24"><path d="M4 11l8-6.5 8 6.5M6 9.5V19h12V9.5"/></svg>',
   pulse: '<svg viewBox="0 0 24 24"><path d="M3 12h4l2.5-6 5 12 2.5-6h4"/></svg>',
 };
-const DESC = { claude: 'Anthropic coding agent', codex: 'OpenAI coding agent', gemini: 'Google agent (Gemini)', ollama: 'Free model on your Mac', shell: 'Your normal zsh' };
+const DESC = { claude: 'Anthropic coding agent', codex: 'OpenAI coding agent', gemini: 'Google agent (Gemini)', ollama: 'Free model on your Mac', opencode: 'Agent on your local model', shell: 'Your normal zsh' };
 const INSTALL = {
+  opencode: { title: 'OpenCode is not installed', steps: ['npm install -g opencode-ai'], after: 'Then open an OpenCode tab inside a project folder.', url: 'https://opencode.ai' },
   claude: { title: 'Claude Code is not installed', steps: ['curl -fsSL https://claude.ai/install.sh | bash'], after: 'Then open a Claude Code tab and follow the login steps.', url: 'https://docs.claude.com/en/docs/claude-code/setup' },
   codex: { title: 'Codex is not installed', steps: ['npm install -g @openai/codex'], after: 'Then open a Codex tab and sign in with your ChatGPT account.', url: 'https://github.com/openai/codex' },
   gemini: { title: 'Antigravity CLI is not installed', steps: ['curl -fsSL https://antigravity.google/cli/install.sh | bash'], after: 'Then open an Antigravity tab: it opens your browser to sign in with your Google account.', url: 'https://antigravity.google' },
@@ -45,6 +47,8 @@ function termTheme(a = S.settings.accent) {
 }
 
 /* ---------- tabs ---------- */
+// Brand color per AI: tints its tab, pane and cursor. Plain shell keeps the theme accent.
+const AI_COLOR = { claude: '#D97757', codex: '#10A37F', gemini: '#4285F4', ollama: '#E9E9EE', opencode: '#F5A623' };
 function installed(preset) { const bin = S.presets[preset]?.bin; return !bin || !!S.tools.installed[bin]; }
 
 async function openTab({ preset, cwd, project = null, model = null, pull = null, beside = false, quiet = false }) {
@@ -53,21 +57,23 @@ async function openTab({ preset, cwd, project = null, model = null, pull = null,
     toast('Choose a local model first');
     return openFinder();
   }
-  const tab = { uid: ++uid, preset, cwd, project, model: model || (preset === 'ollama' ? S.settings.defaultModel : null), pull, exited: false };
+  const tab = { uid: ++uid, preset, cwd, project, model: model || (preset === 'ollama' ? S.settings.defaultModel : null), pull, exited: false, since: Date.now(), state: 'idle', lastPoke: Date.now() + 4000 }; // startup output isn't a task
   const pane = document.createElement('section');
   pane.className = 'pane';
-  pane.innerHTML = `<div class="pane-head">${ICONS[preset]}<span class="path"></span><span class="badge"></span></div><div class="term"></div>`;
+  if (AI_COLOR[preset]) pane.style.setProperty('--ai', AI_COLOR[preset]);
+  pane.innerHTML = `<div class="pane-head">${ICONS[preset]}<span class="path"></span><span class="tok"></span><span class="badge"></span></div><div class="term"></div>`;
   $('#stage').appendChild(pane);
   tab.el = pane;
   tab.term = new Terminal({
     fontFamily: '"JetBrains Mono", "SF Mono", Menlo, monospace', fontSize: 13, lineHeight: 1.2,
     cursorBlink: !reduceMotion, cursorStyle: 'block', scrollback: 5000, allowProposedApi: true,
-    macOptionClickForcesSelection: true, theme: termTheme(),
+    macOptionClickForcesSelection: true, theme: termTheme(AI_COLOR[preset]),
   });
   tab.fit = new FitAddon.FitAddon();
   tab.term.loadAddon(tab.fit);
   tab.term.open($('.term', pane));
-  tab.term.attachCustomKeyEventHandler((e) => !(e.metaKey && /^[tw1-9d]$/i.test(e.key))); // app shortcuts
+  tab.term.registerLinkProvider(linkProvider(tab));
+  tab.term.attachCustomKeyEventHandler((e) => !(e.metaKey && /^[tw1-9db]$/i.test(e.key))); // app shortcuts
   pane.addEventListener('mousedown', () => { if (S.active !== tab.uid) activate(tab.uid); });
   S.tabs.push(tab);
   if (beside && typeof S.active === 'number') S.pair = [S.active, tab.uid];
@@ -84,9 +90,10 @@ async function openTab({ preset, cwd, project = null, model = null, pull = null,
   }
   tab.term.onData((d) => {
     if (tab.exited) return closeTab(tab.uid);
+    tab.lastPoke = Date.now(); // the echo of your own typing isn't AI work
     api.write(tab.pty, d);
   });
-  tab.term.onResize(({ cols, rows }) => api.resize(tab.pty, cols, rows));
+  tab.term.onResize(({ cols, rows }) => { tab.lastPoke = Date.now(); api.resize(tab.pty, cols, rows); }); // redraw after resize isn't work either
   let raf;
   new ResizeObserver(() => { cancelAnimationFrame(raf); raf = requestAnimationFrame(() => pane.classList.contains('visible') && tab.fit.fit()); }).observe($('.term', pane));
   $('.path', pane).textContent = tab.cwd;
@@ -98,6 +105,7 @@ async function openTab({ preset, cwd, project = null, model = null, pull = null,
 function closeTab(id, silent) {
   const i = S.tabs.findIndex((t) => t.uid === id);
   if (i < 0) return;
+  if (!silent && S.tabs[i].state === 'working' && !S.tabs[i].exited) return confirmClose(S.tabs[i]);
   const [tab] = S.tabs.splice(i, 1);
   if (tab.pty) { api.kill(tab.pty); byPty.delete(tab.pty); }
   tab.term.dispose(); tab.el.remove();
@@ -111,7 +119,7 @@ function activate(id) { S.active = id; if (id !== 'home') setView('term'); else 
 
 function setView(v) {
   document.body.dataset.view = v;
-  $('#crumb').textContent = v === 'dash' ? 'Dashboard' : (S.tabs.find((t) => t.uid === S.active) ? tabLabel(S.tabs.find((t) => t.uid === S.active)) : 'Terminals');
+  $('#crumb').textContent = v === 'dash' ? 'Home' : (S.tabs.find((t) => t.uid === S.active) ? tabLabel(S.tabs.find((t) => t.uid === S.active)) : 'Terminals');
   document.querySelectorAll('.nav-item[data-view]').forEach((b) => b.classList.toggle('on', b.dataset.view === v));
   layout();
 }
@@ -134,14 +142,14 @@ function layout() {
   });
 }
 
-function tabLabel(t) { return t.pull ? 'Install ' + t.pull.split(':').pop() : (t.project || base(t.cwd)); }
+function tabLabel(t) { return t.name || (t.pull ? 'Install ' + t.pull.split(':').pop() : (t.project || base(t.cwd))); }
 
 function renderTabs() {
   $('#tabCount').textContent = S.tabs.length || '';
   if (document.body.dataset.view === 'term') $('#crumb').textContent = S.tabs.find((t) => t.uid === S.active) ? tabLabel(S.tabs.find((t) => t.uid === S.active)) : 'Terminals';
   $('#tabs').innerHTML = S.tabs.map((t, i) => `
-    <div class="tab ${t.uid === S.active ? 'active' : ''} ${S.pair?.includes(t.uid) ? 'split' : ''} ${t.exited ? 'exited' : ''}" data-id="${t.uid}" role="tab" title="${esc(S.presets[t.preset].label)} · ${esc(t.cwd || '')}${i < 9 ? ' (Cmd+' + (i + 1) + ')' : ''}">
-      ${ICONS[t.preset]}<span class="label">${esc(tabLabel(t))}</span><button class="x" data-close="${t.uid}" aria-label="Close tab">×</button>
+    <div class="tab ${t.uid === S.active ? 'active' : ''} ${S.pair?.includes(t.uid) ? 'split' : ''} ${t.exited ? 'exited' : ''} ${t.state}" draggable="true" data-id="${t.uid}" ${AI_COLOR[t.preset] ? `style="--ai:${AI_COLOR[t.preset]}"` : ''} role="tab" title="${esc(S.presets[t.preset].label)} · ${esc(t.cwd || '')}${i < 9 ? ' (Cmd+' + (i + 1) + ')' : ''} · double-click to rename">
+      ${ICONS[t.preset]}<span class="label">${esc(tabLabel(t))}</span><i class="st" aria-label="${t.state === 'waiting' ? 'Finished or needs you' : t.state === 'working' ? 'Working' : ''}"></i><button class="x" data-close="${t.uid}" aria-label="Close tab">×</button>
     </div>`).join('');
   $('#topStatus').dataset.tabs = S.tabs.length;
 }
@@ -149,15 +157,110 @@ $('#tabs').addEventListener('click', (e) => {
   const c = e.target.closest('[data-close]');
   if (c) return closeTab(Number(c.dataset.close));
   const t = e.target.closest('[data-id]');
-  if (t) activate(t.dataset.id === 'home' ? 'home' : Number(t.dataset.id));
+  const id = t && (t.dataset.id === 'home' ? 'home' : Number(t.dataset.id));
+  // re-rendering an already-active tab would detach it and swallow the rename double-click
+  if (t && !(id === S.active && document.body.dataset.view === 'term')) activate(id);
+});
+// Visual rename only: t.name is never saved, so it's gone when the tab closes.
+$('#tabs').addEventListener('dblclick', (e) => {
+  const lbl = e.target.closest('.label'), t = lbl && S.tabs.find((x) => x.uid === Number(lbl.parentElement.dataset.id));
+  if (!t) return;
+  lbl.parentElement.draggable = false; lbl.contentEditable = 'true'; lbl.focus(); document.getSelection().selectAllChildren(lbl);
+  const done = (save) => { lbl.onblur = null; if (save) t.name = lbl.textContent.trim(); renderTabs(); if (document.body.dataset.view === 'term') $('#crumb').textContent = tabLabel(t); t.term.focus(); };
+  lbl.onblur = () => done(true);
+  lbl.onkeydown = (k) => { if (k.key === 'Enter' || k.key === 'Escape') { k.preventDefault(); done(k.key === 'Enter'); } k.stopPropagation(); };
 });
 $('#tabs').addEventListener('auxclick', (e) => { const t = e.target.closest('[data-id]'); if (e.button === 1 && t && t.dataset.id !== 'home') closeTab(Number(t.dataset.id)); });
+
+function confirmClose(t) {
+  showModal(`<h2>Still working</h2><h1>Close ${esc(tabLabel(t))}?</h1>
+    <p class="muted">${esc(S.presets[t.preset].label)} is in the middle of something. Closing stops it.</p>
+    <div class="modal-foot"><button class="btn" data-close>Keep it</button><button class="btn primary" id="closeAnyway">Close tab</button></div>`);
+  $('#closeAnyway').onclick = () => { closeModal(); closeTab(t.uid, true); saveTabs(); };
+  $('#closeAnyway').focus();
+}
 
 function saveTabs() {
   api.setState('tabs', S.tabs.filter((t) => !t.pull).map((t) => ({ preset: t.preset, cwd: t.cwd, project: t.project, model: t.model })));
 }
 
-api.onData((id, d) => byPty.get(id)?.term.write(d));
+api.onData((id, d) => {
+  const t = byPty.get(id);
+  if (!t) return;
+  t.term.write(d);
+  const now = Date.now();
+  if (now - t.lastPoke < 500) return;
+  t.lastOut = now; t.busySince ??= now;
+  if (t.state !== 'working') setTabState(t, 'working');
+});
+
+/* ---------- activity: working / finished-or-needs-you / idle ---------- */
+// shortcut: guesses from output timing (AIs animate while working, go quiet when done or asking); no CLI tells us directly.
+const QUIET = 3000, MIN_TASK = 3000;
+const seen = (t) => document.hasFocus() && document.body.dataset.view === 'term' && t.el.classList.contains('visible');
+function setTabState(t, s) {
+  t.state = s;
+  const el = $(`#tabs [data-id="${t.uid}"]`);
+  if (!el) return;
+  el.classList.remove('idle', 'working', 'waiting'); el.classList.add(s);
+  $('.st', el).setAttribute('aria-label', s === 'waiting' ? 'Finished or needs you' : s === 'working' ? 'Working' : '');
+}
+setInterval(() => {
+  const now = Date.now();
+  for (const t of S.tabs) {
+    if (t.state === 'waiting' && seen(t)) setTabState(t, 'idle');
+    if (t.state !== 'working' || now - t.lastOut < QUIET) continue;
+    const long = t.lastOut - t.busySince >= MIN_TASK;
+    t.busySince = null;
+    if (!long || seen(t) || t.exited) { setTabState(t, 'idle'); continue; }
+    setTabState(t, 'waiting');
+    const n = new Notification(`${S.presets[t.preset].label} finished or needs you`, { body: tabLabel(t), silent: false });
+    n.onclick = () => { api.focusWindow(); activate(t.uid); };
+  }
+}, 1000);
+window.addEventListener('focus', () => S.tabs.forEach((t) => t.state === 'waiting' && seen(t) && setTabState(t, 'idle')));
+
+/* ---------- clickable links and file paths ---------- */
+const URL_RE = /https?:\/\/[^\s"'<>()\[\]]*[^\s"'<>()\[\].,;:!?]/g;
+const PATH_RE = /(?:~|\.{1,2})?\/?(?:[\w@.-]+\/)*[\w@-][\w@.-]*\.[A-Za-z][\w]{0,7}(?::\d+){0,2}/g;
+// shortcut: one terminal row at a time, so a link wrapped onto two rows is only half clickable.
+function linkProvider(tab) {
+  return {
+    async provideLinks(y, cb) {
+      const text = tab.term.buffer.active.getLine(y - 1)?.translateToString(true) || '';
+      const range = (i, len) => ({ start: { x: i + 1, y }, end: { x: i + len, y } });
+      const links = [...text.matchAll(URL_RE)].map((m) => ({ range: range(m.index, m[0].length), text: m[0], activate: () => api.openUrl(m[0]) }));
+      const blanked = text.replace(URL_RE, (s) => ' '.repeat(s.length)); // a URL's path part isn't a file path
+      const cands = [...blanked.matchAll(PATH_RE)].map((m) => { const [p, line, col] = m[0].split(':'); return { m, p, line, col }; });
+      const ok = cands.length ? new Set(await api.existingPaths(tab.cwd, [...new Set(cands.map((c) => c.p))])) : new Set();
+      for (const c of cands) if (ok.has(c.p)) links.push({ range: range(c.m.index, c.m[0].length), text: c.m[0], activate: () => api.openFile(tab.cwd, c.p, c.line, c.col) });
+      cb(links.length ? links : undefined);
+    },
+  };
+}
+
+/* ---------- drag tabs to reorder ---------- */
+let dragUid = null;
+$('#tabs').addEventListener('dragstart', (e) => { const t = e.target.closest('[data-id]'); if (!t) return; dragUid = Number(t.dataset.id); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/x-orbit-tab', t.dataset.id); });
+$('#tabs').addEventListener('dragover', (e) => { if (dragUid != null && e.target.closest('[data-id]')) e.preventDefault(); });
+$('#tabs').addEventListener('drop', (e) => {
+  const el = e.target.closest('[data-id]'), to = el && Number(el.dataset.id);
+  if (dragUid == null || !el || to === dragUid) return;
+  e.preventDefault();
+  const from = S.tabs.findIndex((t) => t.uid === dragUid), [moved] = S.tabs.splice(from, 1), r = el.getBoundingClientRect();
+  S.tabs.splice(S.tabs.findIndex((t) => t.uid === to) + (e.clientX > r.left + r.width / 2 ? 1 : 0), 0, moved);
+  renderTabs(); saveTabs();
+});
+$('#tabs').addEventListener('dragend', () => (dragUid = null));
+
+/* ---------- tokens used per tab (Claude Code and Codex keep local logs) ---------- */
+async function refreshTabTokens() {
+  const list = S.tabs.filter((t) => ['claude', 'codex'].includes(t.preset) && t.pty).map((t) => ({ uid: t.uid, tool: t.preset, cwd: t.cwd, since: t.since }));
+  if (!list.length) return;
+  const got = await api.tabTokens(list).catch(() => ({}));
+  for (const t of S.tabs) if (got[t.uid] != null) { t.tokens = got[t.uid]; $('.tok', t.el).textContent = t.tokens ? fmt(t.tokens) + ' tokens' : ''; }
+}
+setInterval(() => !document.hidden && refreshTabTokens(), 15000);
 api.onExit((id) => {
   const t = byPty.get(id);
   if (!t) return;
@@ -176,7 +279,8 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && !$('#modal').hidden) return closeModal();
   if (!e.metaKey || e.altKey || e.ctrlKey) return;
   const k = e.key.toLowerCase();
-  if (k === 't') { e.preventDefault(); openLauncher(currentProject()); }
+  if (k === 't') { e.preventDefault(); openLauncher(null); }
+  else if (k === 'b') { e.preventDefault(); toggleNav(); }
   else if (k === 'w') { e.preventDefault(); if (!$('#modal').hidden) closeModal(); else if (typeof S.active === 'number') closeTab(S.active); }
   else if (k === 'd') { e.preventDefault(); toggleSplit(); }
   else if (/^[1-9]$/.test(k)) { e.preventDefault(); const t = S.tabs[Number(k) - 1]; if (t) activate(t.uid); }
@@ -195,7 +299,13 @@ function toggleSplit() {
   openLauncher(currentProject() || { name: cur.project || base(cur.cwd), path: cur.cwd }, true);
 }
 $('#splitBtn').onclick = toggleSplit;
-$('#newBtn').onclick = $('#navNew').onclick = () => openLauncher(currentProject());
+$('#newBtn').onclick = $('#navNew').onclick = () => openLauncher(null); // always the projects folder; pick a project from the list to open it there
+function toggleNav(off = !document.body.classList.contains('nav-off')) {
+  document.body.classList.toggle('nav-off', off);
+  $('#navToggle').setAttribute('aria-expanded', !off);
+  if (S.settings.navCollapsed !== off) { S.settings.navCollapsed = off; api.setState('settings', S.settings); }
+}
+$('#navToggle').onclick = () => toggleNav();
 $('#navFinder').onclick = () => openFinder();
 $('#navFree').onclick = () => openFreeRam();
 $('#projToggle').onclick = () => { $('#projPanel').classList.toggle('collapsed'); layout(); };
@@ -240,7 +350,7 @@ api.onProjects((l) => { S.projects = l; renderProjects(); renderHome(); });
 function openLauncher(project, beside = false) {
   const last = project && S.lastAi[project.name];
   const cwd = project ? project.path : S.projects.exists ? S.projects.dir : null;
-  const order = ['claude', 'codex', 'gemini', 'ollama', 'shell'];
+  const order = ['claude', 'codex', 'gemini', 'opencode', 'ollama', 'shell'];
   const sub = (k) => {
     if (!installed(k)) return 'Not installed: click for steps';
     if (k === 'ollama') return S.settings.defaultModel ? esc(S.settings.defaultModel) + (S.tools.ollama.running ? '' : ' · open the Ollama app first') : 'No model yet: find one';
@@ -606,13 +716,13 @@ $('#settingsBtn').onclick = openSettings;
 // Preview only; Save in Settings is what stores it.
 function applyAccent(c) {
   document.documentElement.style.setProperty('--accent', c);
-  for (const t of S.tabs) t.term.options.theme = termTheme(c);
+  for (const t of S.tabs) t.term.options.theme = termTheme(AI_COLOR[t.preset] || c);
 }
 
 /* ---------- home ---------- */
 function renderHome() {
   const h = new Date().getHours();
-  const quick = ['claude', 'codex', 'gemini', 'ollama', 'shell'].map((k) => `<button data-quick="${k}" class="${installed(k) ? '' : 'off'}"><span class="ico">${ICONS[k]}</span><span class="t">${esc(S.presets[k].label)}</span><span class="s">${installed(k) ? DESC[k] : 'Not installed'}</span></button>`).join('');
+  const quick = ['claude', 'codex', 'gemini', 'opencode', 'ollama', 'shell'].map((k) => `<button data-quick="${k}" class="${installed(k) ? '' : 'off'}"><span class="ico">${ICONS[k]}</span><span class="t">${esc(S.presets[k].label)}</span><span class="s">${installed(k) ? DESC[k] : 'Not installed'}</span></button>`).join('');
   $('#home').innerHTML = `
     <div class="headline-top">
       <div><div class="eyebrow">${h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening'} · ${S.projects.projects.length} projects</div><h1>Launch an AI in any project.</h1></div>
@@ -621,7 +731,7 @@ function renderHome() {
     <div class="quick">${quick}</div>`;
   $('#emptyStage').innerHTML = `<span class="empty-ico">${ICONS.shell}</span><h1>Pick a project.</h1>
     <p class="muted">Choose one on the left, or start a terminal in your projects folder.</p>
-    <div class="chips">${['claude', 'codex', 'gemini', 'ollama', 'shell'].map((k) => `<button class="chip ${installed(k) ? '' : 'off'}" data-quick="${k}">${esc(S.presets[k].label)}</button>`).join('')}</div>
+    <div class="chips">${['claude', 'codex', 'gemini', 'opencode', 'ollama', 'shell'].map((k) => `<button class="chip ${installed(k) ? '' : 'off'}" data-quick="${k}">${esc(S.presets[k].label)}</button>`).join('')}</div>
     <div class="keys"><span><kbd>⌘T</kbd> new tab</span><span><kbd>⌘W</kbd> close</span><span><kbd>⌘1</kbd>–<kbd>⌘9</kbd> switch</span><span><kbd>⌘D</kbd> split</span></div>`;
 }
 $('#emptyStage').addEventListener('click', (e) => { const q = e.target.closest('[data-quick]'); if (q) openTab({ preset: q.dataset.quick, cwd: S.projects.exists ? S.projects.dir : null }); });
@@ -633,10 +743,34 @@ $('#home').addEventListener('click', (e) => {
 });
 
 /* ---------- boot ---------- */
+// ---------- copied images: drag (or click) one into a terminal to attach it ----------
+const shellPath = (p) => p.replace(/([^\w\/.\-])/g, '\\$1') + ' '; // escaped like a Finder drop, which Claude Code and Codex read as an image
+function insertClip(tab, p) { if (!tab?.pty) return; activate(tab.uid); tab.term.paste(shellPath(p)); tab.term.focus(); }
+function renderClips(list) {
+  $('#clipsCount').textContent = list.length || '';
+  $('#clipsPop').innerHTML = list.length
+    ? '<div class="clips-head">Last copied images · drag into a terminal</div><div class="clips-grid">' + list.map((c) => `<img src="${c.thumb}" draggable="true" data-path="${esc(c.path)}" alt="Copied image" title="Drag into a terminal, or click to add it to the active one">`).join('') + '</div>'
+    : '<div class="clips-head">Copy an image (Cmd+C, or Cmd+Ctrl+Shift+4 for a screenshot) and it shows up here.</div>';
+}
+$('#clipsBtn').onclick = (e) => { e.stopPropagation(); const p = $('#clipsPop'); p.hidden = !p.hidden; $('#clipsBtn').setAttribute('aria-expanded', !p.hidden); };
+document.addEventListener('click', (e) => { if (!e.target.closest('.clips')) { $('#clipsPop').hidden = true; $('#clipsBtn').setAttribute('aria-expanded', 'false'); } });
+$('#clipsPop').addEventListener('dragstart', (e) => { if (e.target.dataset.path) { e.dataTransfer.setData('text/x-orbit-clip', e.target.dataset.path); setView('term'); } });
+$('#clipsPop').addEventListener('click', (e) => { if (e.target.dataset.path) { insertClip(S.tabs.find((t) => t.uid === S.active), e.target.dataset.path); $('#clipsPop').hidden = true; } });
+$('#stage').addEventListener('dragover', (e) => { if (e.dataTransfer.types.includes('text/x-orbit-clip') && e.target.closest('.pane')) e.preventDefault(); });
+$('#stage').addEventListener('drop', (e) => {
+  const p = e.dataTransfer.getData('text/x-orbit-clip'), pane = e.target.closest('.pane');
+  if (!p || !pane) return;
+  e.preventDefault();
+  insertClip(S.tabs.find((t) => t.el === pane), p);
+});
+api.onClips(renderClips);
+api.clips().then(renderClips);
+
 (async function init() {
   const st = await api.getState();
   Object.assign(S, { settings: st.settings, presets: st.presets, lastAi: st.lastAi, favorites: st.favorites });
   document.documentElement.style.setProperty('--accent', S.settings.accent);
+  toggleNav(!!S.settings.navCollapsed);
   renderSystemShell(); renderTabs(); renderHome(); renderActivity();
   S.projects = await api.listProjects();
   renderProjects(); renderHome();

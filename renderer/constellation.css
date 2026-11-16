@@ -1,0 +1,72 @@
+/* Constellation view: 3D cloud of project files with a HUD. Everything is scoped under .cst. */
+.cst {
+  --c-bg: #07050a; --c-hud: #e8829f; --c-dim: #8d5a6c; --c-faint: rgba(232,130,159,.18);
+  --c-text: #f4e8ee; --c-muted: #a08d96;
+  position: relative; overflow: hidden; background: var(--c-bg); color: var(--c-text); font: 11px/1.4 var(--mono);
+}
+/* Lives as the first card of the Home page. */
+.cst { display: block; height: clamp(440px, 60vh, 640px); margin-bottom: 16px; border: 1px solid var(--line); border-radius: var(--radius); outline: none; }
+.cst-canvas { position: absolute; inset: 0; }
+.cst-canvas canvas { display: block; touch-action: none; }
+.cst-canvas.hover canvas { cursor: pointer; }
+.cst-vignette { position: absolute; inset: 0; pointer-events: none; background:
+  repeating-linear-gradient(90deg, rgba(255,255,255,.012) 0 1px, transparent 1px 90px),
+  radial-gradient(ellipse at 50% 45%, transparent 35%, rgba(0,0,0,.75) 100%); }
+.cst-hud { position: absolute; }
+.cst-cap { text-transform: uppercase; letter-spacing: .14em; font-size: 9.5px; color: var(--c-muted); }
+.cst-cap b { color: var(--c-hud); font-weight: 500; }
+.cst-sec { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; }
+.cst-sec::before { content: ""; width: 5px; height: 5px; background: var(--c-hud); border-radius: 50%; box-shadow: 0 0 8px var(--c-hud); }
+.cst-sec::after { content: ""; flex: 1; height: 1px; background: var(--c-faint); }
+.cst ul { list-style: none; margin: 0; padding: 0; }
+
+.cst-brand { top: 20px; left: 24px; }
+.cst-brand h1 { margin: 0; font: 300 22px var(--ui); letter-spacing: .32em; }
+.cst-status { top: 24px; left: 50%; transform: translateX(-50%); display: flex; gap: 22px; white-space: nowrap; }
+.cst-status span::before { content: "● "; color: var(--c-hud); }
+.cst-clock { top: 16px; right: 24px; text-align: right; }
+.cst-clock .t { font: 300 32px var(--ui); }
+.cst-clock .t i { font-style: normal; color: var(--c-hud); font-size: 20px; }
+
+.cst-left { top: 92px; left: 24px; width: 240px; display: flex; flex-direction: column; gap: 24px; }
+.cst-vital { margin-bottom: 14px; }
+.cst-vital .row { display: flex; justify-content: space-between; }
+.cst-vital .v { font: 300 22px var(--ui); margin: 2px 0; }
+.cst-vital .v small { font-size: 12px; color: var(--c-muted); }
+.cst-vital svg { width: 100%; height: 22px; display: block; }
+.cst-recent li { white-space: nowrap; display: flex; justify-content: space-between; gap: 10px; color: var(--c-muted); padding: 3px 0; }
+.cst-recent li span:last-child { flex-shrink: 0; }
+.cst-recent li span:first-child { min-width: 0; color: var(--c-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.cst-right { top: 92px; right: 24px; width: 240px; }
+.cst-proj { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; }
+.cst-proj button { all: unset; display: contents; cursor: pointer; }
+.cst-proj button > span { padding: 4px 0; color: var(--c-muted); transition: color .15s; }
+.cst-proj button > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cst-proj button > span:first-child::before { content: "◇ "; color: var(--c-dim); }
+.cst-proj button:hover > span, .cst-proj button.on > span { color: var(--c-text); }
+.cst-proj button.on > span:first-child::before { content: "◆ "; color: var(--c-hud); }
+.cst-proj button:focus-visible > span:first-child { outline: 1px solid var(--c-hud); }
+.cst-detail { margin-top: 20px; }
+.cst-detail .name { font: 400 15px var(--ui); margin-bottom: 8px; }
+.cst-detail dl { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; margin: 0; }
+.cst-detail dt { color: var(--c-muted); } .cst-detail dd { margin: 0; text-align: right; }
+.cst-btn { margin-top: 12px; width: 100%; padding: 7px; border: 1px solid var(--c-dim); background: rgba(232,130,159,.06); color: var(--c-text); font: inherit; letter-spacing: .12em; text-transform: uppercase; cursor: pointer; }
+.cst-btn:hover { background: rgba(232,130,159,.16); }
+
+.cst-focus { bottom: 22px; left: 50%; transform: translateX(-50%); text-align: center; width: min(480px, 60%); }
+.cst-focus .big { font: 200 56px/1 var(--ui); margin: 6px 0 4px; }
+.cst-focus .big small { font-size: 14px; letter-spacing: .2em; color: var(--c-muted); margin-left: 8px; }
+.cst-bar { height: 2px; background: var(--c-faint); margin: 10px 0 8px; }
+.cst-bar i { display: block; height: 100%; background: var(--c-hud); box-shadow: 0 0 10px var(--c-hud); }
+.cst-focus .meta { display: flex; justify-content: center; gap: 22px; }
+.cst-help { bottom: 14px; left: 24px; max-width: 230px; }
+.cst-reset { position: absolute; bottom: 12px; right: 24px; padding: 6px 10px; border: 1px solid var(--c-dim); background: rgba(0,0,0,.4); color: var(--c-text); font: inherit; letter-spacing: .12em; text-transform: uppercase; cursor: pointer; }
+.cst-tip { position: fixed; z-index: 5; pointer-events: none; padding: 6px 9px; border: 1px solid var(--c-dim); background: rgba(10,6,10,.9); white-space: nowrap; transform: translate(14px, 14px); opacity: 0; transition: opacity .1s; }
+.cst-tip.show { opacity: 1; }
+.cst-tip b { color: var(--c-hud); font-weight: 500; }
+.cst-empty[hidden] { display: none; }
+.cst-empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--c-muted); }
+/* Viewport widths: the card is ~300px narrower than the window (sidebar + page padding). */
+@media (max-width: 1500px) { .cst-recent-wrap, .cst-status { display: none; } }
+@media (max-width: 1250px) { .cst-left, .cst-right { display: none; } }

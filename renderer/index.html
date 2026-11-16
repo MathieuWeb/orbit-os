@@ -2,17 +2,18 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'sha256-hBC2NOlE3bji0rCf5UsAU7uPmHhq+X9gjlSqfkzrvKE='; img-src 'self' data:">
   <title>Orbit OS</title>
   <link rel="stylesheet" href="../node_modules/@xterm/xterm/css/xterm.css">
   <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="constellation.css">
 </head>
 <body data-view="dash">
   <aside class="nav">
     <div class="brand"><img class="brand-mark" src="logo.svg" alt=""><b>Orbit OS</b></div>
 
     <div class="nav-label">Workspace</div>
-    <button class="nav-item" data-view="dash"><svg viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/></svg>Dashboard</button>
+    <button class="nav-item" data-view="dash"><svg viewBox="0 0 24 24"><path d="M4 11l8-6.5 8 6.5M6 9.5V19h12V9.5"/></svg>Home</button>
     <button class="nav-item" data-view="term"><svg viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="15" rx="2"/><path d="M7 10l3 2.5L7 15M12.5 15H17"/></svg>Terminals<span class="nav-count" id="tabCount"></span></button>
 
     <div class="nav-label">Tools</div>
@@ -27,13 +28,45 @@
   </aside>
 
   <header class="topbar">
-    <div class="crumbs"><b>Orbit OS</b><span>/</span><span id="crumb">Dashboard</span><i class="crumb-dot"></i></div>
+    <button class="nav-toggle" id="navToggle" title="Hide or show the sidebar (Cmd+B)" aria-label="Toggle sidebar" aria-expanded="true"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg></button>
+    <div class="crumbs"><b>Orbit OS</b><span>/</span><span id="crumb">Home</span><i class="crumb-dot"></i></div>
     <div class="top-status" id="topStatus"></div>
     <div class="model-pill" id="modelPill"></div>
+    <div class="clips">
+      <button class="clips-btn" id="clipsBtn" title="Copied images: drag one into a terminal" aria-label="Copied images" aria-expanded="false"><svg viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M20.5 16l-5-5-8.5 8.5"/></svg><span id="clipsCount"></span></button>
+      <div class="clips-pop glass" id="clipsPop" hidden></div>
+    </div>
   </header>
 
   <main class="view dash" id="dashboard">
     <div class="dash-inner">
+      <section class="cst" id="cstView" tabindex="-1">
+        <div class="cst-canvas" id="cst-canvas"></div>
+        <div class="cst-vignette"></div>
+        <div class="cst-hud cst-brand"><h1>CONSTELLATION</h1><div class="cst-cap">Tes projets · un point par fichier</div></div>
+        <div class="cst-hud cst-status cst-cap" id="cst-status"></div>
+        <div class="cst-hud cst-clock"><div class="t" id="cst-clock"></div><div class="cst-cap" id="cst-date"></div></div>
+        <div class="cst-hud cst-left">
+          <section><div class="cst-sec cst-cap">Signes vitaux <b>7 j</b></div><div id="cst-vitals"></div></section>
+          <section class="cst-recent-wrap"><div class="cst-sec cst-cap">Derniers fichiers</div><ul class="cst-recent" id="cst-recent"></ul></section>
+        </div>
+        <div class="cst-hud cst-right">
+          <div class="cst-sec cst-cap">Projets <b id="cst-projCount"></b></div>
+          <div class="cst-proj" id="cst-proj"></div>
+          <div class="cst-detail" id="cst-detail"></div>
+        </div>
+        <div class="cst-hud cst-focus">
+          <div class="cst-cap">Projet phare · <b id="cst-topName"></b></div>
+          <div class="big" id="cst-bigNum"></div>
+          <div class="cst-bar"><i id="cst-bar"></i></div>
+          <div class="cst-cap meta" id="cst-focusMeta"></div>
+        </div>
+        <div class="cst-hud cst-help cst-cap">Glisser : tourner · Pincer ou ⌘ + molette : entrer dans le nuage · Clic droit : déplacer · Double-clic : ouvrir</div>
+        <button class="cst-reset" id="cst-reset" type="button">Vue d'ensemble</button>
+        <div class="cst-empty" id="cst-empty" hidden>Aucun fichier trouvé dans ton dossier de projets.</div>
+        <div class="cst-tip" id="cst-tip"></div>
+      </section>
+
       <section class="hero">
         <div class="hero-usage card">
           <div class="orb-cell" id="usageClaude"></div>
@@ -78,6 +111,7 @@
     </div>
   </main>
 
+
   <div class="modal-wrap" id="modal" hidden>
     <div class="modal glass" role="dialog" aria-modal="true" id="modalBody"></div>
   </div>
@@ -86,5 +120,7 @@
   <script src="../node_modules/@xterm/xterm/lib/xterm.js"></script>
   <script src="../node_modules/@xterm/addon-fit/lib/addon-fit.js"></script>
   <script src="app.js"></script>
+  <script type="importmap">{ "imports": { "three": "../node_modules/three/build/three.module.js", "three/addons/": "../node_modules/three/examples/jsm/" } }</script>
+  <script type="module" src="constellation.js"></script>
 </body>
 </html>

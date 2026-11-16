@@ -72,3 +72,37 @@ assert.deepStrictEqual(cx2.map((x) => [x.label, x.percentUsed]), [['5 h limit', 
 assert.deepStrictEqual(claudeApiItems(null), []);
 assert.deepStrictEqual(codexApiItems({}), []);
 console.log('Usage API parse OK');
+
+// Constellation: files per project, skipped folders, Claude tokens matched by cwd.
+const { collect } = require('../services/constellation');
+const cst = fsx.mkdtempSync(px.join(osx.tmpdir(), 'cst-'));
+const root = px.join(cst, 'Projects'), home = px.join(cst, 'home');
+fsx.mkdirSync(px.join(root, 'Alpha', 'node_modules'), { recursive: true });
+fsx.writeFileSync(px.join(root, 'Alpha', 'a.js'), '');
+fsx.writeFileSync(px.join(root, 'Alpha', 'node_modules', 'skip.js'), '');
+fsx.mkdirSync(px.join(home, '.claude', 'projects', 'x'), { recursive: true });
+fsx.writeFileSync(px.join(home, '.claude', 'projects', 'x', 's.jsonl'),
+  JSON.stringify({ cwd: px.join(fsx.realpathSync(root), 'Alpha', 'src'), timestamp: new Date().toISOString(), message: { usage: { input_tokens: 10, cache_creation_input_tokens: 5, output_tokens: 7, cache_read_input_tokens: 999 } } }));
+const cd = collect(root, home);
+assert.strictEqual(cd.projects.length, 1);
+assert.deepStrictEqual(cd.projects[0].files.map((f) => f.f), ['a.js']);
+assert.strictEqual(cd.projects[0].claude, 22); // cache reads excluded
+assert.strictEqual(cd.projects[0].lastAi, 'claude');
+console.log('Constellation data OK');
+
+// Per-tab tokens: only this folder, only since the tab opened, duplicate message ids counted once.
+(async () => {
+  const { tabTokens } = require('../services/usage');
+  const since = Date.parse('2026-11-16T10:00:00Z'), tt = fsx.mkdtempSync(px.join(osx.tmpdir(), 'tabtok-'));
+  const msg = (ts, cwd, id, n) => JSON.stringify({ type: 'assistant', timestamp: ts, cwd, message: { id, usage: { input_tokens: n, output_tokens: 1, cache_read_input_tokens: 999 } } });
+  fsx.writeFileSync(px.join(tt, 'c.jsonl'), [msg('2026-11-16T09:00:00Z', '/p', 'a', 100), msg('2026-11-16T10:01:00Z', '/p', 'b', 10), msg('2026-11-16T10:01:00Z', '/p', 'b', 10), msg('2026-11-16T10:02:00Z', '/other', 'c', 50)].join('\n'));
+  const touch = (f) => fsx.utimesSync(f, new Date(since + 6e5), new Date(since + 6e5)); // log files are written after the tab opened
+  touch(px.join(tt, 'c.jsonl'));
+  assert.strictEqual(await tabTokens('claude', '/p', since, tt), 11);
+  const cxd = fsx.mkdtempSync(px.join(osx.tmpdir(), 'tabtokx-')), tc = (ts, n) => JSON.stringify({ timestamp: ts, type: 'event_msg', payload: { type: 'token_count', info: { last_token_usage: { input_tokens: n, cached_input_tokens: 2, output_tokens: 1 } } } });
+  fsx.writeFileSync(px.join(cxd, 'r.jsonl'), [JSON.stringify({ timestamp: '2026-11-16T09:59:00Z', type: 'session_meta', payload: { cwd: '/p' } }), tc('2026-11-16T09:59:30Z', 100), tc('2026-11-16T10:05:00Z', 10)].join('\n'));
+  fsx.writeFileSync(px.join(cxd, 's.jsonl'), [JSON.stringify({ timestamp: '2026-11-16T10:00:00Z', type: 'session_meta', payload: { cwd: '/other' } }), tc('2026-11-16T10:05:00Z', 50)].join('\n'));
+  touch(px.join(cxd, 'r.jsonl')); touch(px.join(cxd, 's.jsonl'));
+  assert.strictEqual(await tabTokens('codex', '/p', since, cxd), 9);
+  console.log('Per-tab tokens OK');
+})().catch((e) => { console.error(e); process.exit(1); });
