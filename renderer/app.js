@@ -495,12 +495,16 @@ function renderUsage(tool) {
 }
 // Left-nav usage summary (shown in Terminals): 5 h bar + weekly for every installed tool.
 function renderUsageWidget() {
-  const rows = Object.keys(USAGE).filter((t) => S.tools.installed[t]).map((t) => {
-    const { session, week } = pickLimits((usageOf(t) || {}).items || []), main = session || week;
-    const pct = main ? main.percentUsed : null;
-    return `<div class="u-row"><div class="w-row"><span>${esc(USAGE[t].name)}</span><b>${pct == null ? '–' : pct + '%'}</b></div>
+  const row = (name, pct, sub) => `<div class="u-row"><div class="w-row"><span>${esc(name)}</span><b>${pct == null ? '–' : pct + '%'}</b></div>
       <div class="bar ${pct >= 80 ? 'hot' : ''}"><i style="width:${pct || 0}%"></i></div>
-      <div class="u-week">${main && main !== week && week ? `Weekly ${week.percentUsed}%` : main === week && main ? 'Weekly' : 'No data yet'}</div></div>`;
+      <div class="u-week">${sub}</div></div>`;
+  const rows = Object.keys(USAGE).filter((t) => S.tools.installed[t]).map((t) => {
+    const items = (usageOf(t) || {}).items || [];
+    // Antigravity: one weekly limit per model group ("Gemini models weekly", "Claude and GPT models weekly") -> one row each.
+    const groups = items.filter((m) => / models weekly$/.test(m.label));
+    if (groups.length > 1) return groups.map((m) => row(`${USAGE[t].name} · ${m.label.replace(/ models weekly$/, '').replace(/ and /, '/')}`, m.percentUsed, 'Weekly')).join('');
+    const { session, week } = pickLimits(items), main = session || week;
+    return row(USAGE[t].name, main ? main.percentUsed : null, main && main !== week && week ? `Weekly ${week.percentUsed}%` : main === week && main ? 'Weekly' : 'No data yet');
   }).join('');
   $('#usageWidget').innerHTML = `<div class="w-head">Usage <span>5 h · weekly</span></div>${rows || '<div class="u-week">No AI tool installed</div>'}`;
 }
